@@ -1,3 +1,32 @@
+/* index.css — add near the top */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* prevent accidental horizontal scroll */
+html, body {
+  width: 100%;
+  overflow-x: hidden; /* main defense */
+  margin: 0;
+  padding: 0;
+}
+
+/* ensure images, videos, iframes, tables never overflow */
+img, picture, video, iframe, table {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* make long words/URLs wrap instead of forcing width */
+.app-container,
+.app-container * {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -24,10 +53,17 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+
+  /* center horizontally but start vertically so top spacing looks natural on desktop */
+  display: flex;
+  justify-content: center; /* centers the app horizontally */
+  align-items: flex-start;  /* keep content from vertically centering (prevents mobile-look on desktop) */
+
+  padding: 2rem;            /* room around the app on large screens */
+  box-sizing: border-box;
+  background-color: #242424; /* keep your dark background by default */
 }
 
 h1 {
@@ -66,3 +102,4 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+

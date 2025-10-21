@@ -1,42 +1,88 @@
-#root {
-  max-width: 1280px;
+/* global overflow / breaking rules (index.css) */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Prevent accidental horizontal scroll from any route/content */
+html, body {
+  width: 100%;
+  overflow-x: hidden; /* primary defense */
+}
+
+/* Make sure main app container can't be forced wider */
+.app-root {
+  width: 100%;
+  max-width: 1200px;    /* keep your preferred max width */
   margin: 0 auto;
+  overflow-x: hidden;   /* additional safety */
+}
+
+/* prevent long words / URLs / text from expanding layout */
+.app-content,
+.app-content * {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+/* Images, videos, iframes, tables must not overflow container */
+img, picture, video, iframe, table {
+  max-width: 100%;
+  height: auto;
+}
+
+/* make tables scroll inside container rather than expand page */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* If some page uses width:100vw (bad when you have padding on body)
+   ensure no element uses 100vw to cause horizontal overflow.
+   This rule won't override intentional uses that rely on !important,
+   but it will prevent common mistakes. */
+:root {
+  --no-100vw: 1;
+}
+
+
+
+.app-root {
+  width: 100%;
+  max-width: 1200px;       /* limits width on large screens */
+  margin: 0 auto;          /* ensures centered if body wasn't a flex parent */
+  background: #ffffff;     /* white card area */
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
   padding: 2rem;
-  text-align: center;
+  box-sizing: border-box;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* make header / menu sit nicely */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+/* page content */
+.app-content {
+  text-align: left; /* prefer left-aligned text inside card for desktop readability */
+}
+
+/* mobile adjustments */
+@media (max-width: 768px) {
+  .app-root {
+    padding: 1rem;
+    border-radius: 8px;
   }
-  to {
-    transform: rotate(360deg);
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }

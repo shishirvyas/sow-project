@@ -2,6 +2,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const { printRoutes } = require("./utils/listRoutes.js"); // relative path
+
 const multer = require("multer");
 const axios = require("axios");
 const fs = require("fs").promises;
@@ -27,6 +29,22 @@ const LOCAL_LLMS = {
   ollama: { name: "Ollama", type: "ollama", url: "http://localhost:11434" }, // default Ollama API
   textgen: { name: "TextGenerationWebUI", type: "textgen", url: "http://localhost:7860" }, // default TG-UI port
 };
+
+// Use environment variable to specify allowed origin
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("CORS not allowed from this origin: " + origin));
+  },
+  credentials: true, // if you need cookies or auth headers
+}));
+
+
 // runtime selection (in-memory). Default priority: USE_MOCK_ENV -> openai (if key) -> local (if available)
 let runtimeSelection = {
   mode: USE_MOCK_ENV ? "mock" : (OPENAI_KEY ? "openai" : "mock"),
@@ -326,6 +344,19 @@ Return JSON only with keys: risks (array of strings), unclear (array of strings)
   }
 });
 
+// ----------------- mount routers / routes -----------------
+// example: direct routes
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+
+
 /* ---------- Start server ---------- */
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Backend running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+
+  // ✅ Log registered routes AFTER the server is listening
+  printRoutes(app);
+});
+
