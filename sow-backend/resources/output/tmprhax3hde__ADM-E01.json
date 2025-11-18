@@ -1,0 +1,13 @@
+{
+  "detected": false,
+  "findings": [],
+  "overall_risk": "none",
+  "actions": [],
+  "meta": {
+    "source_file": "/Users/shilpadhavale/skope360/sow-project/sow-backend/resources/sow-docs/tmprhax3hde.docx",
+    "prompt_name": "ADM-E01",
+    "note": "LLM did not return JSON; raw saved.",
+    "raw_path": "/Users/shilpadhavale/skope360/sow-project/sow-backend/resources/output/tmprhax3hde__ADM-E01__raw.txt",
+    "trigger_hits": 0
+  }
+}

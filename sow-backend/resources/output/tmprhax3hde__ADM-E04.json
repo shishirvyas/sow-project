@@ -1,0 +1,11 @@
+{
+  "detected": false,
+  "findings": [],
+  "overall_risk": "none",
+  "actions": [],
+  "meta": {
+    "source_file": "/Users/shilpadhavale/skope360/sow-project/sow-backend/resources/sow-docs/tmprhax3hde.docx",
+    "prompt_name": "ADM-E04",
+    "trigger_hits": 0
+  }
+}
