@@ -26,9 +26,18 @@ class Settings(BaseSettings):
     # Optional LLM tuning
     MAX_CHARS_FOR_SINGLE_CALL: int = 4000
     FALLBACK_TO_CHUNK: bool = True
+    
+    # Groq Configuration
+    LLM_PROVIDER: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: Optional[str] = None
+    
+    # Ollama Configuration
+    OLLAMA_BASE_URL: Optional[str] = None
+    OLLAMA_MODEL: Optional[str] = None
 
     # pydantic v2 / pydantic-settings uses `model_config` for settings
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

@@ -1,0 +1,85 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run FastAPI (Uvicorn) - app.main (recommended)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "--app-dir",
+        "src",
+        "app.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/sow-backend",
+      "envFile": "${workspaceFolder}/sow-backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Run FastAPI (Uvicorn) - src.app.main (alternate)",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "src.app.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/sow-backend",
+      "envFile": "${workspaceFolder}/sow-backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug pytest - current file (use for tests/test_*.py)",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "${workspaceFolder}/sow-backend/tests/${fileBasename}",
+        "-q",
+        "-s"
+      ],
+      "cwd": "${workspaceFolder}/sow-backend",
+      "envFile": "${workspaceFolder}/sow-backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug pytest - by -k (edit to change -k expression)",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests/test_hello.py",
+        "-k",
+        "hello",
+        "-q",
+        "-s"
+      ],
+      "cwd": "${workspaceFolder}/sow-backend",
+      "envFile": "${workspaceFolder}/sow-backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug Python file (current) - run file directly",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/sow-backend",
+      "envFile": "${workspaceFolder}/sow-backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
