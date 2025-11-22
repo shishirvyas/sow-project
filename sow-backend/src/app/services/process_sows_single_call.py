@@ -50,7 +50,7 @@ PROMPT_DIR = RESOURCES / "clause-lib"
 OUT_DIR = RESOURCES / "output"
 
 # Import main flow
-from main_flow import load_prompts
+from main_flow import load_prompts, load_prompts_from_database
 
 def call_llm_single(system_prompt: str, user_prompt: str):
     """
@@ -212,9 +212,18 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 # ---------- Main flow ----------
 
 def process_all_single_call():
-    prompts = load_prompts(PROMPT_DIR)
+    # Check if we should use database or file-based prompts
+    use_database = os.getenv("USE_PROMPT_DATABASE", "false").lower() == "true"
+    
+    if use_database:
+        logging.info("Loading prompts from database...")
+        prompts = load_prompts_from_database()
+    else:
+        logging.info("Loading prompts from files...")
+        prompts = load_prompts(PROMPT_DIR)
+    
     if not prompts:
-        logging.error(f"No prompts found in {PROMPT_DIR}. Place prompt text files (*.txt) there.")
+        logging.error(f"No prompts found. Check your prompt source configuration.")
         return
 
     sow_files = sorted([p for p in SOW_DIR.iterdir() if p.suffix.lower() in (".docx", ".pdf", ".txt")])

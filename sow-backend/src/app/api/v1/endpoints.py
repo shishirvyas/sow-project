@@ -12,6 +12,20 @@ class PromptVariable(BaseModel):
     variable_name: str
     variable_value: str
 
+class PromptCreate(BaseModel):
+    clause_id: str
+    name: str
+    prompt_text: str
+    is_active: bool = True
+
+class VariableCreate(BaseModel):
+    variable_name: str
+    variable_value: str
+    description: str = None
+
+class BulkVariablesCreate(BaseModel):
+    variables: list[VariableCreate]
+
 @router.get("/hello")
 async def hello():
   return {"message": "Hello from FastAPI"}
@@ -131,6 +145,214 @@ def get_prompt_variables(clause_id: str):
         return JSONResponse(
             status_code=500,
             content={"error": str(e), "message": "Failed to fetch variables"}
+        )
+
+@router.put("/prompts/{clause_id}/variables")
+def update_prompt_variable(clause_id: str, variable: PromptVariable):
+    """
+    Update a variable value for a specific prompt
+    """
+    try:
+        from src.app.services.prompt_db_service import PromptDatabaseService
+        db_service = PromptDatabaseService()
+        success = db_service.update_variable(
+            clause_id, 
+            variable.variable_name, 
+            variable.variable_value
+        )
+        if success:
+            return {
+                "message": "Variable updated successfully",
+                "clause_id": clause_id,
+                "variable_name": variable.variable_name,
+                "new_value": variable.variable_value
+            }
+        else:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Variable '{variable.variable_name}' not found for {clause_id}"}
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Failed to update variable"}
+        )
+
+@router.post("/prompts")
+def create_prompt(prompt: PromptCreate):
+    """
+    Create a new prompt template in the database
+    """
+    import logging
+    try:
+        from src.app.services.prompt_db_service import PromptDatabaseService
+        db_service = PromptDatabaseService()
+        
+        # Insert the new prompt template
+        conn = db_service.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("""
+                INSERT INTO prompt_templates (clause_id, name, prompt_text, is_active)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (prompt.clause_id, prompt.name, prompt.prompt_text, prompt.is_active))
+            
+            prompt_id = cur.fetchone()[0]
+            conn.commit()
+            
+            logging.info(f"Created new prompt template: {prompt.clause_id}")
+            
+            return {
+                "message": "Prompt created successfully",
+                "clause_id": prompt.clause_id,
+                "prompt_id": prompt_id,
+                "name": prompt.name
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cur.close()
+            conn.close()
+            
+    except Exception as e:
+        logging.error(f"Error creating prompt: {type(e).__name__}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Failed to create prompt"}
+        )
+
+@router.post("/prompts/{clause_id}/variables")
+def add_prompt_variable(clause_id: str, variable: VariableCreate):
+    """
+    Add a new variable to an existing prompt
+    """
+    import logging
+    try:
+        from src.app.services.prompt_db_service import PromptDatabaseService
+        db_service = PromptDatabaseService()
+        
+        conn = db_service.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            # Get prompt_id for the clause_id
+            cur.execute("""
+                SELECT id FROM prompt_templates WHERE clause_id = %s
+            """, (clause_id,))
+            
+            result = cur.fetchone()
+            if not result:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"Prompt not found for clause_id: {clause_id}"}
+                )
+            
+            prompt_id = result[0]
+            
+            # Insert the variable
+            cur.execute("""
+                INSERT INTO prompt_variables (prompt_id, variable_name, variable_value, description)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (prompt_id, variable.variable_name, variable.variable_value, variable.description))
+            
+            variable_id = cur.fetchone()[0]
+            conn.commit()
+            
+            logging.info(f"Added variable '{variable.variable_name}' to prompt {clause_id}")
+            
+            return {
+                "message": "Variable added successfully",
+                "clause_id": clause_id,
+                "variable_id": variable_id,
+                "variable_name": variable.variable_name,
+                "variable_value": variable.variable_value
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cur.close()
+            conn.close()
+            
+    except Exception as e:
+        logging.error(f"Error adding variable: {type(e).__name__}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Failed to add variable"}
+        )
+
+@router.post("/prompts/{clause_id}/variables/bulk")
+def add_prompt_variables_bulk(clause_id: str, bulk_variables: BulkVariablesCreate):
+    """
+    Add multiple variables to an existing prompt in one request
+    """
+    import logging
+    try:
+        from src.app.services.prompt_db_service import PromptDatabaseService
+        db_service = PromptDatabaseService()
+        
+        conn = db_service.get_connection()
+        cur = conn.cursor()
+        
+        try:
+            # Get prompt_id for the clause_id
+            cur.execute("""
+                SELECT id FROM prompt_templates WHERE clause_id = %s
+            """, (clause_id,))
+            
+            result = cur.fetchone()
+            if not result:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"Prompt not found for clause_id: {clause_id}"}
+                )
+            
+            prompt_id = result[0]
+            
+            # Insert all variables
+            added_variables = []
+            for variable in bulk_variables.variables:
+                cur.execute("""
+                    INSERT INTO prompt_variables (prompt_id, variable_name, variable_value, description)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                """, (prompt_id, variable.variable_name, variable.variable_value, variable.description))
+                
+                variable_id = cur.fetchone()[0]
+                added_variables.append({
+                    "variable_id": variable_id,
+                    "variable_name": variable.variable_name
+                })
+            
+            conn.commit()
+            
+            logging.info(f"Added {len(added_variables)} variables to prompt {clause_id}")
+            
+            return {
+                "message": f"Added {len(added_variables)} variables successfully",
+                "clause_id": clause_id,
+                "variables_added": added_variables,
+                "count": len(added_variables)
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cur.close()
+            conn.close()
+            
+    except Exception as e:
+        logging.error(f"Error adding bulk variables: {type(e).__name__}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Failed to add variables"}
         )
 
 @router.put("/prompts/{clause_id}/variables")
