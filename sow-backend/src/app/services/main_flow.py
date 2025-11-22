@@ -1,14 +1,22 @@
 import logging
 import json
 import time
+import os
 from pathlib import Path
 from text_extraction_helpers import extract_text
 from fallback_chunking import fallback_chunk_and_call
 
 def process_all_single_call(PROMPT_DIR, SOW_DIR, OUT_DIR, MAX_CHARS_FOR_SINGLE_CALL, FALLBACK_TO_CHUNK, TRIGGER_RE, make_user_prompt_full, call_llm_single):
-    prompts = load_prompts(PROMPT_DIR)
+    # Check if we should use database or file-based prompts
+    use_database = os.getenv("USE_PROMPT_DATABASE", "false").lower() == "true"
+    
+    if use_database:
+        prompts = load_prompts_from_database()
+    else:
+        prompts = load_prompts(PROMPT_DIR)
+    
     if not prompts:
-        logging.error(f"No prompts found in {PROMPT_DIR}. Place prompt text files (*.txt) there.")
+        logging.error(f"No prompts found. Check your prompt source configuration.")
         return
 
     sow_files = sorted([p for p in SOW_DIR.iterdir() if p.suffix.lower() in (".docx", ".pdf", ".txt")])
@@ -88,8 +96,9 @@ def process_all_single_call(PROMPT_DIR, SOW_DIR, OUT_DIR, MAX_CHARS_FOR_SINGLE_C
             out_file.write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
             logging.info(f"Wrote {out_file}")
 
-            # Add delay to handle rate-limiting
-            time.sleep(10)  # Increased delay to 10 seconds to further reduce risk of hitting API rate limits
+            # Add delay to handle rate-limiting between different prompts
+            logging.info("Waiting 20 seconds before next API call to respect rate limits...")
+            time.sleep(20)  # 20 second delay between prompts to avoid rate limiting
 
 def load_prompts(prompt_dir: Path):
     prompts = {}
@@ -99,3 +108,19 @@ def load_prompts(prompt_dir: Path):
     for p in sorted(prompt_dir.glob("*.txt")):
         prompts[p.stem] = p.read_text(encoding="utf-8")
     return prompts
+
+def load_prompts_from_database():
+    """Load prompts from PostgreSQL database with variable substitution"""
+    try:
+        from prompt_db_service import PromptDatabaseService
+        db_service = PromptDatabaseService()
+        prompts = db_service.fetch_all_active_prompts()
+        if prompts:
+            logging.info(f"Loaded {len(prompts)} prompts from database")
+        else:
+            logging.warning("No prompts found in database")
+        return prompts
+    except Exception as e:
+        logging.error(f"Failed to load prompts from database: {e}")
+        logging.info("Falling back to file-based prompts")
+        return {}

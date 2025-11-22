@@ -18,6 +18,13 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Configure logging for this script
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Override any existing configuration
+)
+
 # Text extraction helpers
 from text_extraction_helpers import extract_text, extract_text_from_docx, extract_text_from_pdf
 
@@ -48,97 +55,121 @@ from main_flow import load_prompts
 def call_llm_single(system_prompt: str, user_prompt: str):
     """
     Call the LLM with system and user prompts, return parsed JSON response.
+    Includes retry logic with exponential backoff for rate limiting.
     """
-    try:
-        import httpx
-        
-        provider = os.getenv("LLM_PROVIDER", "openai").lower()
-        
-        if provider == "openai":
-            client = OpenAI()
-            resp = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            text = resp.choices[0].message.content.strip()
-        elif provider == "groq":
-            if not GROQ_API_KEY:
-                raise RuntimeError("GROQ_API_KEY is not set in environment.")
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
-            payload = {
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.0,
-                "max_tokens": 3000
-            }
-            logging.info(f"Calling Groq LLM with model {GROQ_MODEL}...")
-            with httpx.Client(timeout=60) as client:
-                r = client.post(url, headers=headers, json=payload)
-                if r.status_code != 200:
-                    logging.error(f"Groq API error {r.status_code}: {r.text}")
-                r.raise_for_status()
-                resp = r.json()
-            text = resp["choices"][0]["message"]["content"].strip()
-        elif provider == "ollama":
-            url = f"{OLLAMA_BASE_URL}/api/chat"
-            payload = {
-                "model": OLLAMA_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            }
-            logging.info("Calling Ollama LLM...")
-            with httpx.Client(timeout=60) as client:
-                r = client.post(url, json=payload)
-                r.raise_for_status()
-                resp = r.json()
-            text = resp.get("message", {}).get("content", "").strip()
-        else:
-            raise RuntimeError(f"Unsupported LLM_PROVIDER: {provider}")
-
-        # Try to parse as JSON
+    import httpx
+    
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    max_retries = 3
+    base_delay = 15  # Start with 15 seconds
+    
+    for attempt in range(max_retries):
         try:
-            parsed = json.loads(text)
-            return {"parsed": parsed, "raw": text}
-        except json.JSONDecodeError:
-            # Try to extract JSON from markdown code blocks
-            json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1).strip()
-                try:
-                    parsed = json.loads(json_str)
-                    logging.info("Successfully extracted JSON from markdown code block")
-                    return {"parsed": parsed, "raw": text}
-                except json.JSONDecodeError:
-                    pass
-            
-            # Try to find and parse the first JSON object in the text
-            brace_idx = text.find('{')
-            if brace_idx >= 0:
-                # Try to extract from the first { to the last }
-                last_brace = text.rfind('}')
-                if last_brace > brace_idx:
-                    json_str = text[brace_idx:last_brace+1]
+            if provider == "openai":
+                client = OpenAI()
+                payload = {
+                    "model": OPENAI_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                }
+                logging.info(f"Calling OpenAI LLM with payload:\n{json.dumps(payload, indent=2)}")
+                resp = client.chat.completions.create(**payload)
+                text = resp.choices[0].message.content.strip()
+            elif provider == "groq":
+                if not GROQ_API_KEY:
+                    raise RuntimeError("GROQ_API_KEY is not set in environment.")
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+                payload = {
+                    "model": GROQ_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 3000
+                }
+                logging.info(f"Calling Groq LLM with payload:\n{json.dumps(payload, indent=2)}")
+                with httpx.Client(timeout=60) as client:
+                    r = client.post(url, headers=headers, json=payload)
+                    if r.status_code == 429:
+                        retry_delay = base_delay * (2 ** attempt)
+                        logging.warning(f"Rate limit hit (429). Retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            logging.error("Max retries reached. Rate limit persists.")
+                            raise httpx.HTTPStatusError(f"Rate limit exceeded after {max_retries} attempts", request=r.request, response=r)
+                    if r.status_code != 200:
+                        logging.error(f"Groq API error {r.status_code}: {r.text}")
+                    r.raise_for_status()
+                    resp = r.json()
+                text = resp["choices"][0]["message"]["content"].strip()
+            elif provider == "ollama":
+                url = f"{OLLAMA_BASE_URL}/api/chat"
+                payload = {
+                    "model": OLLAMA_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                }
+                logging.info(f"Calling Ollama LLM with payload:\n{json.dumps(payload, indent=2)}")
+                with httpx.Client(timeout=60) as client:
+                    r = client.post(url, json=payload)
+                    r.raise_for_status()
+                    resp = r.json()
+                text = resp.get("message", {}).get("content", "").strip()
+            else:
+                raise RuntimeError(f"Unsupported LLM_PROVIDER: {provider}")
+
+            # Try to parse as JSON
+            try:
+                parsed = json.loads(text)
+                return {"parsed": parsed, "raw": text}
+            except json.JSONDecodeError:
+                # Try to extract JSON from markdown code blocks
+                json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1).strip()
                     try:
                         parsed = json.loads(json_str)
-                        logging.info("Successfully extracted JSON object from response")
+                        logging.info("Successfully extracted JSON from markdown code block")
                         return {"parsed": parsed, "raw": text}
                     except json.JSONDecodeError:
                         pass
-            
-            logging.warning(f"Failed to parse LLM response as JSON. Raw response:\n{text[:500]}")
-            return {"parsed": None, "raw": text}
-    except Exception as e:
-        logging.error(f"LLM call failed: {type(e).__name__}: {e}")
-        return {"parsed": None, "raw": str(e), "error": True}
+                
+                # Try to find and parse the first JSON object in the text
+                brace_idx = text.find('{')
+                if brace_idx >= 0:
+                    # Try to extract from the first { to the last }
+                    last_brace = text.rfind('}')
+                    if last_brace > brace_idx:
+                        json_str = text[brace_idx:last_brace+1]
+                        try:
+                            parsed = json.loads(json_str)
+                            logging.info("Successfully extracted JSON object from response")
+                            return {"parsed": parsed, "raw": text}
+                        except json.JSONDecodeError:
+                            pass
+                
+                logging.warning(f"Failed to parse LLM response as JSON. Raw response (first 2000 chars):\n{text[:2000]}")
+                logging.warning(f"Raw response (last 500 chars):\n{text[-500:]}")
+                return {"parsed": None, "raw": text}
+                
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429 and attempt < max_retries - 1:
+                continue  # Already handled above for Groq
+            raise
+        except Exception as e:
+            logging.error(f"LLM call failed: {type(e).__name__}: {e}")
+            return {"parsed": None, "raw": str(e), "error": True}
+    
+    # Should not reach here, but just in case
+    return {"parsed": None, "raw": "Max retries exceeded", "error": True}
 
 # ---------- User prompt builder ----------
 
@@ -262,9 +293,6 @@ def process_all_single_call():
             out_file = OUT_DIR / f"{sow.stem}__{prompt_name}.json"
             out_file.write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
             logging.info(f"Wrote {out_file}")
-
-            # Add delay to handle rate-limiting
-            time.sleep(10)  # Increased delay to 10 seconds to further reduce risk of hitting API rate limits
 
 if __name__ == "__main__":
     process_all_single_call()

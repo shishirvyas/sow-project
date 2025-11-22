@@ -12,3 +12,5 @@ PyPDF2
 openai
 regex
 debugpy
+httpx
+psycopg2-binary
