@@ -1,8 +1,0 @@
-```json
-{
-  "detected": false,
-  "findings": [],
-  "overall_risk": "none",
-  "actions": []
-}
-```
