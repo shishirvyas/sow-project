@@ -2,7 +2,16 @@ import json
 import logging
 from pathlib import Path
 from text_extraction_helpers import extract_text
+try:
+    from src.app.utils.trace import log_time
+except Exception:
+    import sys
+    from pathlib import Path
+    ROOT = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(ROOT))
+    from src.app.utils.trace import log_time
 
+@log_time
 def fallback_chunk_and_call(system_prompt: str, sow_text: str, call_llm_single=None, OUT_DIR: Path = None):
     """
     If a document exceeds size limits, a safe fallback is to chunk the SOW,

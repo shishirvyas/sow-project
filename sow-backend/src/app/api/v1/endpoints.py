@@ -5,6 +5,10 @@ from src.app.core.config import settings
 import subprocess
 import sys
 from pathlib import Path
+import json
+import logging
+from src.app.utils.trace import log_time
+from typing import Optional
 
 router = APIRouter()
 
@@ -49,11 +53,18 @@ async def get_config():
     
 
 @router.post("/process-sows")
-def process_sows():
+@log_time
+def process_sows(filenames: Optional[str] = None):
     """
-    Run process_sows_single_call.py and return the latest output JSON from the output folder.
+    Run process_sows_single_call.py for specific filenames and return the latest output JSON.
+
+    This endpoint requires a comma-separated `filenames` query parameter. The backend will
+    not scan the `resources/sow-docs` directory automatically.
     """
     import logging
+    # Validate input: filenames must be provided by caller
+    if not filenames:
+        return JSONResponse(status_code=400, content={"error": "No filenames provided. Supply a comma-separated `filenames` query parameter with one or more SOW filenames."})
     # sow-backend/src/app/services/process_sows_single_call.py
     # __file__ = .../sow-backend/src/app/api/v1/endpoints.py
     # parents[4] -> sow-backend
@@ -62,9 +73,18 @@ def process_sows():
     output_dir = backend_root / "resources" / "output"
     # Run the script synchronously and capture output
     python_exec = sys.executable or "python"
+    cmd = [python_exec, str(script_path)]
+    # If the caller supplied a comma-separated list of filenames, pass them to the script
+    if filenames:
+        # filenames expected as comma-separated basenames or relative paths
+        file_list = [f.strip() for f in filenames.split(',') if f.strip()]
+        if file_list:
+            cmd.extend(file_list)
+            logging.info(f"Passing filenames to processing script: {file_list}")
+
     result = subprocess.run(
-        [python_exec, str(script_path)], 
-        cwd=str(script_path.parent), 
+        cmd,
+        cwd=str(script_path.parent),
         check=False,
         capture_output=True,
         text=True
@@ -82,9 +102,35 @@ def process_sows():
         return Response(content="{}", media_type="application/json")
     latest_json = json_files[0]
     content = latest_json.read_text(encoding="utf-8")
-    return Response(content=content, media_type="application/json")
+
+    # Try to upload the output file to Azure Blob (if configured) and return blob URL
+    try:
+        from src.app.services.azure_blob import upload_file_to_azure_blob
+        upload_info = None
+        try:
+            upload_info = upload_file_to_azure_blob(latest_json)
+        except Exception as e:
+            # If upload fails, do not block the response; log and continue
+            import logging
+            logging.warning(f"Azure upload failed: {e}")
+
+        # Return parsed JSON plus optional blob_url
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            parsed = {"raw": content}
+
+        response_payload = {"content": parsed}
+        if upload_info:
+            response_payload["blob_url"] = upload_info.get("blob_url")
+
+        return JSONResponse(content=response_payload)
+    except Exception:
+        # If anything goes wrong in the upload path, fall back to returning raw content
+        return Response(content=content, media_type="application/json")
 
 @router.get("/prompts")
+@log_time
 def list_prompts():
     """
     List all available prompts from database
@@ -104,6 +150,7 @@ def list_prompts():
         )
 
 @router.get("/prompts/{clause_id}")
+@log_time
 def get_prompt(clause_id: str):
     """
     Get a specific prompt by clause_id with all variables populated
@@ -126,6 +173,7 @@ def get_prompt(clause_id: str):
         )
 
 @router.get("/prompts/{clause_id}/variables")
+@log_time
 def get_prompt_variables(clause_id: str):
     """
     Get all variables and their values for a specific prompt
@@ -148,6 +196,7 @@ def get_prompt_variables(clause_id: str):
         )
 
 @router.put("/prompts/{clause_id}/variables")
+@log_time
 def update_prompt_variable(clause_id: str, variable: PromptVariable):
     """
     Update a variable value for a specific prompt
@@ -179,6 +228,7 @@ def update_prompt_variable(clause_id: str, variable: PromptVariable):
         )
 
 @router.post("/prompts")
+@log_time
 def create_prompt(prompt: PromptCreate):
     """
     Create a new prompt template in the database
@@ -226,6 +276,7 @@ def create_prompt(prompt: PromptCreate):
         )
 
 @router.post("/prompts/{clause_id}/variables")
+@log_time
 def add_prompt_variable(clause_id: str, variable: VariableCreate):
     """
     Add a new variable to an existing prompt
@@ -288,6 +339,7 @@ def add_prompt_variable(clause_id: str, variable: VariableCreate):
         )
 
 @router.post("/prompts/{clause_id}/variables/bulk")
+@log_time
 def add_prompt_variables_bulk(clause_id: str, bulk_variables: BulkVariablesCreate):
     """
     Add multiple variables to an existing prompt in one request

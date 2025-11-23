@@ -11,6 +11,7 @@ Output JSON files are written to resources/output/.
 
 
 import os
+import sys
 import re
 import json
 import time
@@ -51,7 +52,17 @@ OUT_DIR = RESOURCES / "output"
 
 # Import main flow
 from main_flow import load_prompts, load_prompts_from_database
+try:
+    from src.app.utils.trace import log_time
+except Exception:
+    import sys
+    from pathlib import Path
+    # ROOT -> sow-backend
+    ROOT = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(ROOT))
+    from src.app.utils.trace import log_time
 
+@log_time
 def call_llm_single(system_prompt: str, user_prompt: str):
     """
     Call the LLM with system and user prompts, return parsed JSON response.
@@ -173,6 +184,7 @@ def call_llm_single(system_prompt: str, user_prompt: str):
 
 # ---------- User prompt builder ----------
 
+@log_time
 def make_user_prompt_full(sow_text: str, decision_rules: str = "") -> str:
     """
     Build a user prompt that asks the model to analyze the entire SOW.
@@ -211,6 +223,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------- Main flow ----------
 
+@log_time
 def process_all_single_call():
     # Check if we should use database or file-based prompts
     use_database = os.getenv("USE_PROMPT_DATABASE", "false").lower() == "true"
@@ -226,7 +239,24 @@ def process_all_single_call():
         logging.error(f"No prompts found. Check your prompt source configuration.")
         return
 
-    sow_files = sorted([p for p in SOW_DIR.iterdir() if p.suffix.lower() in (".docx", ".pdf", ".txt")])
+    # If filenames are passed via CLI args, only process those
+    cli_files = []
+    if len(sys.argv) > 1:
+        # Arguments may be basenames or relative/absolute paths
+        for a in sys.argv[1:]:
+            candidate = Path(a)
+            if not candidate.is_absolute():
+                candidate = SOW_DIR / a
+            if candidate.exists() and candidate.suffix.lower() in (".docx", ".pdf", ".txt"):
+                cli_files.append(candidate)
+            else:
+                logging.warning(f"Requested SOW file not found or unsupported type: {a}")
+
+    if cli_files:
+        logging.info(f"Processing {len(cli_files)} SOW(s) from CLI args")
+        sow_files = cli_files
+    else:
+        sow_files = sorted([p for p in SOW_DIR.iterdir() if p.suffix.lower() in (".docx", ".pdf", ".txt")])
     if not sow_files:
         logging.error(f"No SOW files found in {SOW_DIR}. Place files there.")
         return

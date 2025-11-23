@@ -12,5 +12,6 @@ PyPDF2
 openai
 regex
 debugpy
+azure-storage-blob
 httpx
 psycopg2-binary

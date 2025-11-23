@@ -2,10 +2,21 @@ import logging
 import json
 import time
 import os
+try:
+    from src.app.utils.trace import log_time
+except Exception:
+    # When running this file as a script (subprocess) the package root may not be on sys.path.
+    # Add the repository root to sys.path so absolute imports like `src.app...` work.
+    import sys
+    from pathlib import Path
+    ROOT = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(ROOT))
+    from src.app.utils.trace import log_time
 from pathlib import Path
 from text_extraction_helpers import extract_text
 from fallback_chunking import fallback_chunk_and_call
 
+@log_time
 def process_all_single_call(PROMPT_DIR, SOW_DIR, OUT_DIR, MAX_CHARS_FOR_SINGLE_CALL, FALLBACK_TO_CHUNK, TRIGGER_RE, make_user_prompt_full, call_llm_single):
     # Check if we should use database or file-based prompts
     use_database = os.getenv("USE_PROMPT_DATABASE", "false").lower() == "true"
@@ -100,6 +111,7 @@ def process_all_single_call(PROMPT_DIR, SOW_DIR, OUT_DIR, MAX_CHARS_FOR_SINGLE_C
             logging.info("Waiting 20 seconds before next API call to respect rate limits...")
             time.sleep(20)  # 20 second delay between prompts to avoid rate limiting
 
+@log_time
 def load_prompts(prompt_dir: Path):
     prompts = {}
     if not prompt_dir.exists():
@@ -109,6 +121,7 @@ def load_prompts(prompt_dir: Path):
         prompts[p.stem] = p.read_text(encoding="utf-8")
     return prompts
 
+@log_time
 def load_prompts_from_database():
     """Load prompts from PostgreSQL database with variable substitution"""
     try:
