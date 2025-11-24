@@ -1,12 +1,12 @@
-import React, { Suspense, lazy } from 'react'
+import React from 'react'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
 import MainLayout from '../layouts/MainLayout'
-// use React.lazy to dynamically load react-apexcharts
-const ReactApexChart = lazy(() => import('react-apexcharts'))
+import RevenueChart from 'src/components/Charts/RevenueChart'
+import TrafficChart from 'src/components/Charts/TrafficChart'
 
 const summary = [
   { title: 'Users', value: '3,482' },
@@ -55,11 +55,7 @@ export default function Dashboard() {
               <Typography variant="h6" gutterBottom>
                 Weekly Revenue
               </Typography>
-              <Box sx={{ height: 300 }}>
-                <Suspense fallback={<div>Loading chart...</div>}>
-                  <ReactApexChart options={chartOptions} series={chartSeries} type="area" height={300} />
-                </Suspense>
-              </Box>
+              <RevenueChart height={300} />
             </CardContent>
           </Card>
         </Grid>
@@ -68,13 +64,9 @@ export default function Dashboard() {
           <Card elevation={1}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Recent Activity
+                Traffic Sources
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                - 12 new users signed up
-                <br />- 7 orders placed
-                <br />- Server uptime stable
-              </Typography>
+              <TrafficChart height={260} />
             </CardContent>
           </Card>
         </Grid>

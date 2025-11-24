@@ -11,6 +11,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import Tooltip from '@mui/material/Tooltip'
 import { Link as RouterLink } from 'react-router-dom'
 import AccountPopover from 'src/components/AccountPopover/AccountPopover'
+import NotificationsPopover from 'src/components/Notifications/NotificationsPopover'
 
 export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) {
   return (
@@ -54,13 +55,15 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
           </IconButton>
         </Tooltip>
 
-        <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+        <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1, alignItems: 'center' }}>
           <Button component={RouterLink} to="/dashboard" color="primary" variant="text">
             Dashboard
           </Button>
           <Button component={RouterLink} to="/products" color="primary" variant="text">
             Products
           </Button>
+          <NotificationsPopover />
+          
           <Button component={RouterLink} to="/sign-in" color="primary" variant="outlined" sx={{ ml: 1 }}>
             Sign In
           </Button>
