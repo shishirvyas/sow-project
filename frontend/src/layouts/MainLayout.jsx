@@ -58,7 +58,14 @@ export default function MainLayout({ children }) {
     <>
       <List>
         <ListItem disablePadding>
-          <Tooltip title="Dashboard" placement="right" disableHoverListener={!isMdUp || !collapsed}>
+          <Tooltip
+            title="Dashboard"
+            placement="right"
+            disableHoverListener={!isMdUp || !collapsed}
+            enterDelay={100}
+            leaveDelay={200}
+            enterNextDelay={100}
+          >
             <span>
               <ListItemButton
                 component={RouterLink}
@@ -72,7 +79,7 @@ export default function MainLayout({ children }) {
                 <ListItemText
                   sx={{
                     opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 160ms ease, width 160ms ease',
+                    transition: 'opacity 200ms cubic-bezier(0.4,0,0.2,1), width 180ms cubic-bezier(0.4,0,0.2,1)',
                     width: isMdUp && collapsed ? 0 : 'auto',
                     overflow: 'hidden',
                   }}

@@ -69,7 +69,12 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          boxShadow: shadows[3],
+          boxShadow: shadows[4],
+          transition: 'box-shadow 200ms cubic-bezier(0.4,0,0.2,1), transform 160ms ease',
+          '&:hover': {
+            boxShadow: shadows[5],
+            transform: 'translateY(-2px)'
+          }
         },
       },
     },
@@ -125,6 +130,16 @@ const theme = createTheme({
         paper: {
           borderRight: '1px solid rgba(15,23,36,0.04)',
           backgroundColor: '#fff',
+        },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          paddingTop: 8,
+          paddingBottom: 8,
+          paddingLeft: 12,
+          paddingRight: 12,
         },
       },
     },

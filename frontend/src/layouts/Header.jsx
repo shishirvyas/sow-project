@@ -49,8 +49,9 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
             sx={{
               display: { xs: 'none', md: 'inline-flex' },
               mr: 1,
-              transition: 'transform 200ms ease, opacity 150ms ease',
-              transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 220ms cubic-bezier(0.2,0.8,0.2,1), opacity 150ms ease',
+              transform: collapsed ? 'rotate(180deg) scale(0.95)' : 'rotate(0deg) scale(1)',
+              '&:active': { transform: collapsed ? 'rotate(180deg) scale(0.92)' : 'rotate(0deg) scale(0.96)' },
             }}
           >
             {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
