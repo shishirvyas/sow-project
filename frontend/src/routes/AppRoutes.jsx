@@ -9,7 +9,6 @@ const Products = lazy(() => import('src/pages/Products'))
 const Profile = lazy(() => import('src/pages/Profile'))
 const Notifications = lazy(() => import('src/pages/Notifications'))
 const Settings = lazy(() => import('src/pages/Settings'))
-const Notifications = lazy(() => import('src/pages/Notifications'))
 
 const Loading = () => (
   <Box sx={{ width: '100%', mt: 6 }}>
