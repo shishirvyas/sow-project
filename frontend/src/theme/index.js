@@ -15,6 +15,8 @@ const shadows = [
 ]
 
 const theme = createTheme({
+  // standard 8px spacing unit
+  spacing: 8,
   palette: {
     primary: {
       light: '#4ea0ff',
@@ -52,6 +54,26 @@ const theme = createTheme({
   },
   shape: { borderRadius: 12 },
   shadows,
+  // small tweaks: slightly stronger card elevation and toolbar spacing
+  components: {
+    MuiToolbar: {
+      styleOverrides: {
+        root: {
+          minHeight: 64,
+          paddingLeft: 16,
+          paddingRight: 16,
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          boxShadow: shadows[3],
+        },
+      },
+    },
+  },
   components: {
     MuiCssBaseline: {
       styleOverrides: {

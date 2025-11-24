@@ -36,15 +36,21 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
         <Box sx={{ flex: 1 }} />
 
         {/* Desktop collapse toggle */}
-        <Tooltip title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} disableHoverListener={false}>
+        <Tooltip
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          disableHoverListener={false}
+          disableFocusListener={false}
+          placement="bottom"
+        >
           <IconButton
             aria-label={collapsed ? 'expand sidebar' : 'collapse sidebar'}
+            aria-pressed={collapsed}
             onClick={onToggleCollapse}
             sx={{
               display: { xs: 'none', md: 'inline-flex' },
               mr: 1,
               transition: 'transform 200ms ease, opacity 150ms ease',
-              transform: collapsed ? 'scale(0.98)' : 'scale(1)',
+              transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
             }}
           >
             {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
