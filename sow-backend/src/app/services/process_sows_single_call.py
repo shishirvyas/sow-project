@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 
 # Text extraction helpers
-from text_extraction_helpers import extract_text, extract_text_from_docx, extract_text_from_pdf
+from src.app.services.text_extraction_helpers import extract_text, extract_text_from_docx, extract_text_from_pdf
 
 # LLM client (OpenAI)
 from openai import OpenAI
@@ -50,7 +50,7 @@ PROMPT_DIR = RESOURCES / "clause-lib"
 OUT_DIR = RESOURCES / "output"
 
 # Import main flow
-from main_flow import load_prompts, load_prompts_from_database
+from src.app.services.main_flow import load_prompts, load_prompts_from_database
 
 def call_llm_single(system_prompt: str, user_prompt: str):
     """
@@ -199,7 +199,7 @@ def make_user_prompt_full(sow_text: str, decision_rules: str = "") -> str:
     prompt = intro + body + "Now produce the JSON output.\n"
     return prompt
 # Import fallback chunking
-from fallback_chunking import fallback_chunk_and_call
+from src.app.services.fallback_chunking import fallback_chunk_and_call
 
 # Configuration for chunking
 MAX_CHARS_FOR_SINGLE_CALL = 100000

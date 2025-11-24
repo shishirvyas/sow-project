@@ -3,8 +3,8 @@ import json
 import time
 import os
 from pathlib import Path
-from text_extraction_helpers import extract_text
-from fallback_chunking import fallback_chunk_and_call
+from src.app.services.text_extraction_helpers import extract_text
+from src.app.services.fallback_chunking import fallback_chunk_and_call
 
 def process_all_single_call(PROMPT_DIR, SOW_DIR, OUT_DIR, MAX_CHARS_FOR_SINGLE_CALL, FALLBACK_TO_CHUNK, TRIGGER_RE, make_user_prompt_full, call_llm_single):
     # Check if we should use database or file-based prompts

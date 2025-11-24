@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from text_extraction_helpers import extract_text
+from src.app.services.text_extraction_helpers import extract_text
 
 def fallback_chunk_and_call(system_prompt: str, sow_text: str, call_llm_single=None, OUT_DIR: Path = None):
     """

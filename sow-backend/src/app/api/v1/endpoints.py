@@ -1,10 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, Response
+from fastapi import APIRouter, BackgroundTasks, Response, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from src.app.core.config import settings
 import subprocess
 import sys
 from pathlib import Path
+import logging
 
 router = APIRouter()
 
@@ -48,12 +49,157 @@ async def get_config():
     }
     
 
+@router.post("/upload-sow")
+async def upload_sow(file: UploadFile = File(...)):
+    """
+    Upload SOW document to Azure Blob Storage
+    
+    Accepts: PDF, DOCX, TXT files
+    Returns: Blob metadata including blob_name for processing
+    """
+    try:
+        # Validate file type
+        allowed_extensions = {".pdf", ".docx", ".txt"}
+        file_ext = Path(file.filename).suffix.lower()
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+        
+        # Upload to Azure Blob Storage
+        from src.app.services.azure_blob_service import AzureBlobService
+        blob_service = AzureBlobService()
+        
+        result = blob_service.upload_sow(
+            file_content=content,
+            filename=file.filename,
+            content_type=file.content_type or "application/octet-stream"
+        )
+        
+        logging.info(f"Uploaded SOW: {result['blob_name']}")
+        
+        return {
+            "message": "SOW uploaded successfully",
+            **result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error uploading SOW: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/process-sow/{blob_name:path}")
+def process_sow_from_blob(blob_name: str):
+    """
+    Process a SOW document from Azure Blob Storage
+    
+    Args:
+        blob_name: Name of the blob in Azure Storage (from upload response)
+        
+    Returns:
+        Analysis results from all configured prompts
+    """
+    try:
+        from src.app.services.sow_processor import SOWProcessor
+        
+        processor = SOWProcessor()
+        results = processor.process_sow_from_blob(blob_name)
+        
+        if "error" in results:
+            raise HTTPException(status_code=500, detail=results["error"])
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error processing SOW: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sows")
+def list_sows(limit: int = 100):
+    """
+    List all SOW documents in Azure Blob Storage
+    
+    Args:
+        limit: Maximum number of results (default 100)
+    """
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        
+        blob_service = AzureBlobService()
+        sows = blob_service.list_sows(limit=limit)
+        
+        return {
+            "sows": sows,
+            "count": len(sows)
+        }
+        
+    except Exception as e:
+        logging.error(f"Error listing SOWs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sows/{blob_name:path}")
+def get_sow_metadata(blob_name: str):
+    """
+    Get metadata for a specific SOW document
+    
+    Args:
+        blob_name: Name of the blob
+    """
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        
+        blob_service = AzureBlobService()
+        metadata = blob_service.get_blob_metadata(blob_name)
+        
+        return metadata
+        
+    except Exception as e:
+        logging.error(f"Error getting SOW metadata: {e}", exc_info=True)
+        raise HTTPException(status_code=404, detail="SOW not found")
+
+@router.delete("/sows/{blob_name:path}")
+def delete_sow(blob_name: str):
+    """
+    Delete a SOW document from Azure Blob Storage
+    
+    Args:
+        blob_name: Name of the blob to delete
+    """
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        
+        blob_service = AzureBlobService()
+        blob_service.delete_sow(blob_name)
+        
+        return {
+            "message": "SOW deleted successfully",
+            "blob_name": blob_name
+        }
+        
+    except Exception as e:
+        logging.error(f"Error deleting SOW: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/process-sows")
 def process_sows():
     """
-    Run process_sows_single_call.py and return the latest output JSON from the output folder.
+    DEPRECATED: Use /upload-sow and /process-sow/{blob_name} instead
+    
+    Legacy endpoint: Run process_sows_single_call.py and return the latest output JSON from the output folder.
     """
-    import logging
+    logging.warning("Using deprecated /process-sows endpoint. Use /upload-sow and /process-sow instead.")
+    
     # sow-backend/src/app/services/process_sows_single_call.py
     # __file__ = .../sow-backend/src/app/api/v1/endpoints.py
     # parents[4] -> sow-backend
@@ -353,35 +499,4 @@ def add_prompt_variables_bulk(clause_id: str, bulk_variables: BulkVariablesCreat
         return JSONResponse(
             status_code=500,
             content={"error": str(e), "message": "Failed to add variables"}
-        )
-
-@router.put("/prompts/{clause_id}/variables")
-def update_prompt_variable(clause_id: str, variable: PromptVariable):
-    """
-    Update a variable value for a specific prompt
-    """
-    try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
-        success = db_service.update_variable(
-            clause_id, 
-            variable.variable_name, 
-            variable.variable_value
-        )
-        if success:
-            return {
-                "message": "Variable updated successfully",
-                "clause_id": clause_id,
-                "variable_name": variable.variable_name,
-                "new_value": variable.variable_value
-            }
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Variable '{variable.variable_name}' not found for {clause_id}"}
-            )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to update variable"}
         )
