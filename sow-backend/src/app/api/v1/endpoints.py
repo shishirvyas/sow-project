@@ -5,6 +5,7 @@ from src.app.core.config import settings
 import subprocess
 import sys
 from pathlib import Path
+import time
 import json
 import logging
 from src.app.utils.trace import log_time
@@ -82,6 +83,7 @@ def process_sows(filenames: Optional[str] = None):
             cmd.extend(file_list)
             logging.info(f"Passing filenames to processing script: {file_list}")
 
+    start_ts = time.time()
     result = subprocess.run(
         cmd,
         cwd=str(script_path.parent),
@@ -89,17 +91,28 @@ def process_sows(filenames: Optional[str] = None):
         capture_output=True,
         text=True
     )
+    end_ts = time.time()
     
-    # Log the subprocess output
+    # Log the subprocess output and prepare server-side processing metadata
+    server_processing = {
+        "cmd": cmd,
+        "returncode": result.returncode,
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "duration_seconds": round(end_ts - start_ts, 3),
+        "stdout": result.stdout or "",
+        "stderr": result.stderr or "",
+    }
     if result.stdout:
         logging.info(f"Script stdout:\n{result.stdout}")
     if result.stderr:
         logging.error(f"Script stderr:\n{result.stderr}")
     
-    # Find the latest .json file in output_dir
+    # Find the .json files in output_dir (recent first)
     json_files = sorted(output_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not json_files:
-        return Response(content="{}", media_type="application/json")
+        # Return processing metadata so UI can show what happened
+        return JSONResponse(status_code=200, content={"error": "No output produced", "processing": server_processing})
     latest_json = json_files[0]
     content = latest_json.read_text(encoding="utf-8")
 
@@ -113,6 +126,9 @@ def process_sows(filenames: Optional[str] = None):
             # If upload fails, do not block the response; log and continue
             import logging
             logging.warning(f"Azure upload failed: {e}")
+            # Capture upload failure in server_processing
+            server_processing.setdefault("upload", {})
+            server_processing["upload"]["error"] = str(e)
 
         # Return parsed JSON plus optional blob_url
         try:
@@ -121,8 +137,12 @@ def process_sows(filenames: Optional[str] = None):
             parsed = {"raw": content}
 
         response_payload = {"content": parsed}
+        # Add processing metadata, list of input/output files and upload info
+        response_payload["processing"] = server_processing
+        response_payload["requested_filenames"] = [f.strip() for f in filenames.split(",")] if filenames else []
+        response_payload["output_files"] = [str(p.name) for p in json_files]
         if upload_info:
-            response_payload["blob_url"] = upload_info.get("blob_url")
+            response_payload["upload_info"] = upload_info
 
         return JSONResponse(content=response_payload)
     except Exception:

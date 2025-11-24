@@ -55,8 +55,45 @@ export default function Results() {
         </div>
       )}
 
-      <div style={{ background: "#f7f7f7", padding: 16, borderRadius: 6 }}>
-        {renderValue(content)}
+      <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ flex: 2 }}>
+          <h3>Structured Analysis</h3>
+          <div style={{ background: "#f7f7f7", padding: 16, borderRadius: 6 }}>
+            {renderValue(content)}
+          </div>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <h3>Processing Logs</h3>
+          <div style={{ background: '#0f1720', color: '#e6eef8', padding: 12, borderRadius: 6, fontSize: 13 }}>
+            <div><strong>Requested files:</strong></div>
+            <div style={{ marginBottom: 8 }}>{(payload.requested_filenames || []).join(', ') || '—'}</div>
+
+            <div><strong>Output files:</strong></div>
+            <div style={{ marginBottom: 8 }}>{(payload.output_files || []).slice(0,5).join(', ') || '—'}</div>
+
+            <div><strong>Duration:</strong></div>
+            <div style={{ marginBottom: 8 }}>{payload.processing?.duration_seconds ? `${payload.processing.duration_seconds}s` : '—'}</div>
+
+            <div><strong>Return code:</strong> {payload.processing?.returncode ?? '—'}</div>
+
+            <details style={{ marginTop: 8 }}>
+              <summary>Stdout (server)</summary>
+              <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8, color: '#dff' }}>{payload.processing?.stdout || '—'}</pre>
+            </details>
+
+            <details style={{ marginTop: 8 }}>
+              <summary>Stderr (server)</summary>
+              <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8, color: '#ffdcdc' }}>{payload.processing?.stderr || '—'}</pre>
+            </details>
+
+            <details style={{ marginTop: 8 }}>
+              <summary>Upload Info</summary>
+              <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8, color: '#efe' }}>{JSON.stringify(payload.upload_info || payload.processing?.upload || {}, null, 2)}</pre>
+            </details>
+
+          </div>
+        </div>
       </div>
 
       <details style={{ marginTop: 12 }}>
