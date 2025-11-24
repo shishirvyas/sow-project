@@ -6,6 +6,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 const Dashboard = lazy(() => import('src/pages/Dashboard'))
 const SignIn = lazy(() => import('src/pages/SignIn'))
 const Products = lazy(() => import('src/pages/Products'))
+const Profile = lazy(() => import('src/pages/Profile'))
 
 const Loading = () => (
   <Box sx={{ width: '100%', mt: 6 }}>
@@ -21,6 +22,7 @@ export default function AppRoutes() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/products" element={<Products />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Suspense>

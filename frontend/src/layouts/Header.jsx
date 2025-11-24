@@ -9,29 +9,25 @@ import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import Tooltip from '@mui/material/Tooltip'
-import Avatar from '@mui/material/Avatar'
 import { Link as RouterLink } from 'react-router-dom'
+import AccountPopover from 'src/components/AccountPopover/AccountPopover'
 
 export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) {
   return (
     <AppBar position="sticky" color="inherit" elevation={1} sx={{ mb: 3 }}>
       <Toolbar sx={{ maxWidth: 1280, mx: 'auto', width: '100%' }}>
-        <Avatar
-          component={RouterLink}
-          to="/"
-          sx={{ bgcolor: 'primary.main', mr: 2, width: 40, height: 40, textDecoration: 'none' }}
-        >
-          SK
-        </Avatar>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AccountPopover />
 
-        <Typography
-          variant="h6"
-          component={RouterLink}
-          to="/"
-          sx={{ textDecoration: 'none', color: 'text.primary', fontWeight: 600 }}
-        >
-          SKOPE
-        </Typography>
+          <Typography
+            variant="h6"
+            component={RouterLink}
+            to="/"
+            sx={{ textDecoration: 'none', color: 'text.primary', fontWeight: 600 }}
+          >
+            SKOPE
+          </Typography>
+        </Box>
 
         <Box sx={{ flex: 1 }} />
 
