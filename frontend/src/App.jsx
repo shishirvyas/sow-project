@@ -5,6 +5,7 @@ import Menu from "./components/Menu/Menu";
 import Home from "./pages/Home";
 import About from "./pages/About";
 import Services from "./pages/Services";
+import Results from "./pages/Results";
 import "./App.css";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
           <Route path="/services" element={<Services />} />
+          <Route path="/results" element={<Results />} />
         </Routes>
       </div>
     </Router>

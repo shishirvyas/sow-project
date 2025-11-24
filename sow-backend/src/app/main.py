@@ -1,7 +1,30 @@
 import logging
+import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.v1.endpoints import router as v1_router
+
+# Try to load .env from the sow-backend root so pydantic settings pick it up
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+# Calculate repo root (sow-backend)
+_repo_root = Path(__file__).resolve().parents[3]
+_env_path = _repo_root / ".env"
+if load_dotenv is not None:
+    if _env_path.exists():
+        load_dotenv(dotenv_path=str(_env_path))
+        logging.info("Loaded .env from %s", _env_path)
+    else:
+        # fallback to default search behavior
+        load_dotenv()
+        logging.info("Called load_dotenv() (default search path)")
+else:
+    logging.warning("python-dotenv not available; .env will not be auto-loaded")
+
 from .core.config import settings
 
 # Configure logging

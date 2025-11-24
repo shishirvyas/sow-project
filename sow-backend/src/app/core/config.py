@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     CALL_LLM: bool = True
+
+    # Azure Blob Storage
+    AZURE_STORAGE_CONNECTION_STRING: Optional[str] = None
+    AZURE_CONTAINER_NAME: Optional[str] = "sow-output"
     
     # Optional LLM tuning
     MAX_CHARS_FOR_SINGLE_CALL: int = 4000
