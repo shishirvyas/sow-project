@@ -8,12 +8,20 @@ import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Divider from '@mui/material/Divider'
+import { useNavigate } from 'react-router-dom'
 
 export default function AccountPopover() {
   const [anchorEl, setAnchorEl] = React.useState(null)
 
   const handleOpen = (e) => setAnchorEl(e.currentTarget)
   const handleClose = () => setAnchorEl(null)
+
+  const navigate = useNavigate()
+
+  const goTo = (path) => {
+    handleClose()
+    navigate(path)
+  }
 
   const open = Boolean(anchorEl)
 
@@ -48,17 +56,17 @@ export default function AccountPopover() {
           </Box>
 
           <Box sx={{ mt: 1 }}>
-            <Button fullWidth variant="contained" size="small" sx={{ mb: 1 }}>
+            <Button fullWidth variant="contained" size="small" sx={{ mb: 1 }} onClick={() => goTo('/profile')}>
               View Profile
             </Button>
-            <Button fullWidth variant="outlined" size="small">
+            <Button fullWidth variant="outlined" size="small" onClick={() => {/* sign out placeholder */}}>
               Sign Out
             </Button>
           </Box>
         </Box>
         <Divider sx={{ my: 1 }} />
         <List dense>
-          <ListItem>
+          <ListItem button onClick={() => goTo('/settings')}>
             <ListItemText primary="Account settings" />
           </ListItem>
           <ListItem>
