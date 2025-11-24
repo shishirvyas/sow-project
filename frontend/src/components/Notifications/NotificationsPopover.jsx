@@ -1,5 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as notificationsService from 'src/services/notifications'
 import IconButton from '@mui/material/IconButton'
 import Badge from '@mui/material/Badge'
 import Popover from '@mui/material/Popover'
@@ -53,11 +54,41 @@ export default function NotificationsPopover() {
   const handleOpen = (e) => setAnchorEl(e.currentTarget)
   const handleClose = () => setAnchorEl(null)
 
+  // fetch latest notifications from server when component mounts
+  React.useEffect(() => {
+    let mounted = true
+    notificationsService
+      .fetchNotifications()
+      .then((data) => {
+        if (!mounted) return
+        const normalized = data.map((it) => ({ read: false, ...it }))
+        setItems(normalized)
+        saveNotifications(normalized)
+      })
+      .catch(() => {
+        // keep current (local) items as fallback
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const handleMarkAllRead = () => {
-    const updated = items.map((i) => ({ ...i, read: true }))
-    setItems(updated)
-    saveNotifications(updated)
-    handleClose()
+    // try server-side first, fallback to local
+    notificationsService
+      .markAllRead()
+      .then(() => {
+        const updated = items.map((i) => ({ ...i, read: true }))
+        setItems(updated)
+        saveNotifications(updated)
+        handleClose()
+      })
+      .catch(() => {
+        const updated = items.map((i) => ({ ...i, read: true }))
+        setItems(updated)
+        saveNotifications(updated)
+        handleClose()
+      })
   }
 
   const handleVisitNotifications = () => {
@@ -112,12 +143,23 @@ export default function NotificationsPopover() {
                 alignItems="flex-start"
                 button
                 onClick={() => {
-                  // mark as read, persist, then navigate to notifications page with id
-                  const updated = items.map((it) => (it.id === n.id ? { ...it, read: true } : it))
-                  setItems(updated)
-                  saveNotifications(updated)
-                  handleClose()
-                  navigate(`/notifications?id=${n.id}`)
+                  // try server mark-as-read then navigate; fallback to local
+                  notificationsService
+                    .markAsRead(n.id)
+                    .then(() => {
+                      const updated = items.map((it) => (it.id === n.id ? { ...it, read: true } : it))
+                      setItems(updated)
+                      saveNotifications(updated)
+                      handleClose()
+                      navigate(`/notifications?id=${n.id}`)
+                    })
+                    .catch(() => {
+                      const updated = items.map((it) => (it.id === n.id ? { ...it, read: true } : it))
+                      setItems(updated)
+                      saveNotifications(updated)
+                      handleClose()
+                      navigate(`/notifications?id=${n.id}`)
+                    })
                 }}
               >
                 <ListItemAvatar>

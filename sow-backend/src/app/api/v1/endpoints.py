@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 import logging
+import json
+from typing import Optional
 
 router = APIRouter()
 
@@ -229,6 +231,108 @@ def process_sows():
     latest_json = json_files[0]
     content = latest_json.read_text(encoding="utf-8")
     return Response(content=content, media_type="application/json")
+
+
+# --- Simple Notifications API (file-backed) ---------------------------------
+# This provides a minimal server-side storage for notifications so the frontend
+# can persist and sync notification read/unread state. It uses a JSON file
+# under the backend's `resources/` folder. This is intentionally lightweight
+# for development. Replace with DB persistence if required.
+
+NOTIFICATIONS_FILE = Path(__file__).resolve().parents[4] / "resources" / "notifications.json"
+
+def _read_notifications_file():
+    try:
+        if not NOTIFICATIONS_FILE.exists():
+            return []
+        raw = NOTIFICATIONS_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw or "[]")
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception as e:
+        logging.error(f"Error reading notifications file: {e}")
+        return []
+
+def _write_notifications_file(items):
+    try:
+        NOTIFICATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        NOTIFICATIONS_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception as e:
+        logging.error(f"Error writing notifications file: {e}")
+        return False
+
+
+@router.get("/notifications")
+def get_notifications():
+    """Return all notifications."""
+    try:
+        items = _read_notifications_file()
+        return {"notifications": items, "count": len(items)}
+    except Exception as e:
+        logging.error(f"Error returning notifications: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+class NotificationCreate(BaseModel):
+    title: str
+    body: Optional[str] = None
+
+
+@router.post("/notifications")
+def create_notification(payload: NotificationCreate):
+    """Create a new notification (dev-only helper)."""
+    try:
+        items = _read_notifications_file()
+        max_id = max((it.get("id", 0) for it in items), default=0)
+        new = {
+            "id": max_id + 1,
+            "title": payload.title,
+            "body": payload.body or "",
+            "time": "now",
+            "read": False,
+        }
+        items.insert(0, new)
+        _write_notifications_file(items)
+        return {"notification": new}
+    except Exception as e:
+        logging.error(f"Error creating notification: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.put("/notifications/{nid}/read")
+def mark_notification_read(nid: int):
+    """Mark a notification as read."""
+    try:
+        items = _read_notifications_file()
+        updated = False
+        for it in items:
+            if int(it.get("id", -1)) == int(nid):
+                it["read"] = True
+                updated = True
+                break
+        if updated:
+            _write_notifications_file(items)
+            return {"message": "marked"}
+        return JSONResponse(status_code=404, content={"error": "not found"})
+    except Exception as e:
+        logging.error(f"Error marking notification read: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.put("/notifications/mark_all_read")
+def mark_all_read():
+    try:
+        items = _read_notifications_file()
+        for it in items:
+            it["read"] = True
+        _write_notifications_file(items)
+        return {"message": "all marked"}
+    except Exception as e:
+        logging.error(f"Error marking all notifications: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 @router.get("/prompts")
 def list_prompts():

@@ -12,6 +12,7 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import { useLocation } from 'react-router-dom'
+import * as notificationsService from 'src/services/notifications'
 
 const STORAGE_KEY = 'skope_notifications'
 
@@ -37,8 +38,29 @@ function saveNotifications(items) {
 
 export default function Notifications() {
   const location = useLocation()
-  const [items, setItems] = React.useState(() => loadNotifications())
+  const [items, setItems] = React.useState([])
   const [focusedId, setFocusedId] = React.useState(null)
+
+  // initial load: try server, fallback to local storage
+  React.useEffect(() => {
+    let mounted = true
+    notificationsService
+      .fetchNotifications()
+      .then((data) => {
+        if (!mounted) return
+        // ensure items have read property
+        const normalized = data.map((it) => ({ read: false, ...it }))
+        setItems(normalized)
+        saveNotifications(normalized)
+      })
+      .catch(() => {
+        const local = loadNotifications()
+        setItems(local)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   React.useEffect(() => {
     // parse ?id= or hash #id-<n>
@@ -50,10 +72,19 @@ export default function Notifications() {
 
     if (id) {
       setFocusedId(id)
-      // mark as read in storage and local state
-      const updated = items.map((it) => (it.id === id ? { ...it, read: true } : it))
-      setItems(updated)
-      saveNotifications(updated)
+      // try server-side mark-as-read, fallback to local
+      notificationsService
+        .markAsRead(id)
+        .then(() => {
+          const updated = items.map((it) => (it.id === id ? { ...it, read: true } : it))
+          setItems(updated)
+          saveNotifications(updated)
+        })
+        .catch(() => {
+          const updated = items.map((it) => (it.id === id ? { ...it, read: true } : it))
+          setItems(updated)
+          saveNotifications(updated)
+        })
 
       // scroll to element after render
       setTimeout(() => {
