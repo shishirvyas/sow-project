@@ -16,19 +16,22 @@ import DashboardIcon from '@mui/icons-material/Dashboard'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import DescriptionIcon from '@mui/icons-material/Description'
 import HistoryIcon from '@mui/icons-material/History'
-import { Link as RouterLink } from 'react-router-dom'
+import CloseIcon from '@mui/icons-material/Close'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import Avatar from '@mui/material/Avatar'
 import Paper from '@mui/material/Paper'
 import ListItemAvatar from '@mui/material/ListItemAvatar'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 
 const drawerWidth = 240
 const collapsedWidth = 72
 
 export default function MainLayout({ children }) {
+  const navigate = useNavigate()
   const theme = useTheme()
   const isMdUp = useMediaQuery(theme.breakpoints.up('md'))
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -40,6 +43,16 @@ export default function MainLayout({ children }) {
       return false
     }
   })
+  const [profile, setProfile] = useState(null)
+  const [profileCardOpen, setProfileCardOpen] = useState(true)
+
+  // Fetch profile data
+  useEffect(() => {
+    fetch('/api/v1/profile')
+      .then(res => res.json())
+      .then(data => setProfile(data))
+      .catch(err => console.error('Failed to fetch profile:', err))
+  }, [])
 
   // Persist collapsed state and reset on small screens
   useEffect(() => {
@@ -262,20 +275,32 @@ export default function MainLayout({ children }) {
             pt: 10,
           }}
         >
-          <Paper sx={{ p: 2, mb: 2 }} elevation={0}>
-            <ListItem>
-              <ListItemAvatar>
-                <Avatar sx={{ bgcolor: 'primary.main' }}>JD</Avatar>
-              </ListItemAvatar>
-              <ListItemText primary="Shishir Vyas" />
-            </ListItem>
-            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-              <Button size="small" variant="contained">
-                View Profile
-              </Button>
-              <Button size="small">Settings</Button>
-            </Box>
-          </Paper>
+          {profileCardOpen && (
+            <Paper sx={{ p: 2, mb: 2, position: 'relative' }} elevation={0}>
+              <IconButton
+                size="small"
+                onClick={() => setProfileCardOpen(false)}
+                sx={{ position: 'absolute', top: 8, right: 8 }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar sx={{ bgcolor: 'primary.main' }}>{profile?.initials || 'JD'}</Avatar>
+                </ListItemAvatar>
+                <ListItemText 
+                  primary={profile?.name || 'Loading...'} 
+                  secondary={profile?.role || ''}
+                />
+              </ListItem>
+              <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                <Button size="small" variant="contained" onClick={() => navigate('/profile')}>
+                  View Profile
+                </Button>
+                <Button size="small" onClick={() => navigate('/settings')}>Settings</Button>
+              </Box>
+            </Paper>
+          )}
 
           <Paper sx={{ p: 1 }} elevation={0}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>

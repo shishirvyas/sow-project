@@ -12,6 +12,14 @@ import { useNavigate } from 'react-router-dom'
 
 export default function AccountPopover() {
   const [anchorEl, setAnchorEl] = React.useState(null)
+  const [profile, setProfile] = React.useState(null)
+
+  React.useEffect(() => {
+    fetch('/api/v1/profile')
+      .then(res => res.json())
+      .then(data => setProfile(data))
+      .catch(err => console.error('Failed to fetch profile:', err))
+  }, [])
 
   const handleOpen = (e) => setAnchorEl(e.currentTarget)
   const handleClose = () => setAnchorEl(null)
@@ -34,7 +42,7 @@ export default function AccountPopover() {
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
       >
-        JD
+        {profile?.initials || 'JD'}
       </Avatar>
 
       <Popover
@@ -48,10 +56,10 @@ export default function AccountPopover() {
       >
         <Box sx={{ p: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1 }}>
-            <Avatar sx={{ bgcolor: 'primary.main' }}>JD</Avatar>
+            <Avatar sx={{ bgcolor: 'primary.main' }}>{profile?.initials || 'JD'}</Avatar>
             <Box>
-              <Typography variant="subtitle1">Shishir Vyas</Typography>
-              <Typography variant="body2" color="text.secondary">Product Manager</Typography>
+              <Typography variant="subtitle1">{profile?.name || 'Loading...'}</Typography>
+              <Typography variant="body2" color="text.secondary">{profile?.role || ''}</Typography>
             </Box>
           </Box>
 

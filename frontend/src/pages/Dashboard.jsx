@@ -1,9 +1,13 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Avatar from '@mui/material/Avatar'
+import Paper from '@mui/material/Paper'
 import MainLayout from '../layouts/MainLayout'
 import RevenueChart from 'src/components/Charts/RevenueChart'
 import TrafficChart from 'src/components/Charts/TrafficChart'
@@ -25,11 +29,33 @@ const chartOptions = {
 const chartSeries = [{ name: 'Revenue', data: [12, 18, 10, 25, 20, 30, 28] }]
 
 export default function Dashboard() {
+  const navigate = useNavigate()
+  const [profile, setProfile] = React.useState(null)
+
+  React.useEffect(() => {
+    fetch('/api/v1/profile')
+      .then(res => res.json())
+      .then(data => setProfile(data))
+      .catch(err => console.error('Failed to fetch profile:', err))
+  }, [])
+
   return (
     <MainLayout>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4">
+          Dashboard
+        </Typography>
+        <Paper sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 2 }} elevation={1}>
+          <Avatar sx={{ bgcolor: 'primary.main' }}>{profile?.initials || 'JD'}</Avatar>
+          <Box>
+            <Typography variant="subtitle2">{profile?.name || 'Loading...'}</Typography>
+            <Typography variant="caption" color="text.secondary">{profile?.role || ''}</Typography>
+          </Box>
+          <Button size="small" variant="outlined" onClick={() => navigate('/profile')}>
+            View Profile
+          </Button>
+        </Paper>
+      </Box>
 
       <Grid container spacing={3} sx={{ mb: 2 }}>
         {summary.map((s) => (
