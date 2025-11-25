@@ -52,6 +52,9 @@ export default function AnalyzeDoc() {
       })
       
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Upload failed: Backend server not available. Please ensure the backend is running.')
+        }
         throw new Error(`Upload failed: ${response.statusText}`)
       }
       
@@ -59,7 +62,11 @@ export default function AnalyzeDoc() {
       setBlobName(data.blob_name)
       setActiveStep(2)
     } catch (err) {
-      setError(err.message || 'Failed to upload document')
+      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+        setError('Upload failed: Backend server not available. Please ensure the backend is running on port 8000.')
+      } else {
+        setError(err.message || 'Failed to upload document')
+      }
     } finally {
       setUploading(false)
     }
@@ -77,6 +84,9 @@ export default function AnalyzeDoc() {
       })
       
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Analysis failed: Backend server not available. Please ensure the backend is running.')
+        }
         throw new Error(`Analysis failed: ${response.statusText}`)
       }
       
@@ -84,7 +94,11 @@ export default function AnalyzeDoc() {
       setResult(data)
       setActiveStep(3)
     } catch (err) {
-      setError(err.message || 'Failed to analyze document')
+      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+        setError('Analysis failed: Backend server not available. Please ensure the backend is running on port 8000.')
+      } else {
+        setError(err.message || 'Failed to analyze document')
+      }
     } finally {
       setAnalyzing(false)
     }
@@ -156,19 +170,20 @@ export default function AnalyzeDoc() {
                     <IconButton
                       component="label"
                       sx={{ color: 'inherit', width: '100%', height: '100%' }}
-                      disabled={activeStep > 0}
                     >
                       {activeStep > 0 ? (
                         <CheckCircleIcon sx={{ fontSize: 48 }} />
                       ) : (
                         <FolderOpenIcon sx={{ fontSize: 48 }} />
                       )}
-                      <input
-                        type="file"
-                        hidden
-                        accept=".pdf,.docx,.txt"
-                        onChange={handleFileChange}
-                      />
+                      {activeStep === 0 && (
+                        <input
+                          type="file"
+                          hidden
+                          accept=".pdf,.docx,.txt"
+                          onChange={handleFileChange}
+                        />
+                      )}
                     </IconButton>
                   </Box>
                   <Typography variant="subtitle1" fontWeight={600}>
@@ -298,6 +313,20 @@ export default function AnalyzeDoc() {
                     {activeStep === 1 && 'Click the Upload button to upload your selected document to the server.'}
                     {activeStep === 2 && 'Click the Start Analysis button to begin processing your document.'}
                   </Typography>
+                </Box>
+              )}
+
+              {/* Reset Workflow Button */}
+              {(activeStep > 0 || selectedFile || result) && (
+                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleReset}
+                    disabled={uploading || analyzing}
+                  >
+                    Reset Workflow
+                  </Button>
                 </Box>
               )}
             </CardContent>

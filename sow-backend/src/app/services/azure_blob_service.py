@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, ContentSettings
 from dotenv import load_dotenv
 import tempfile
 
@@ -69,9 +69,7 @@ class AzureBlobService:
             blob_client.upload_blob(
                 file_content,
                 overwrite=True,
-                content_settings={
-                    "content_type": content_type
-                },
+                content_settings=ContentSettings(content_type=content_type),
                 metadata={
                     "original_filename": filename,
                     "upload_timestamp": timestamp
@@ -242,4 +240,65 @@ class AzureBlobService:
             
         except Exception as e:
             logging.error(f"Error getting blob metadata for {blob_name}: {e}")
+            raise
+    
+    def store_analysis_result(self, blob_name: str, analysis_result: dict) -> dict:
+        """
+        Store analysis results in Azure Blob Storage
+        
+        Args:
+            blob_name: Original SOW blob name
+            analysis_result: Analysis results dictionary to store
+            
+        Returns:
+            dict with result_blob_name, url, size
+        """
+        try:
+            results_container = "sow-analysis-results"
+            
+            # Ensure results container exists
+            container_client = self.blob_service_client.get_container_client(results_container)
+            if not container_client.exists():
+                container_client.create_container()
+                logging.info(f"Created container: {results_container}")
+            
+            # Generate result blob name based on original blob
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = Path(blob_name).stem
+            result_blob_name = f"{base_name}__analysis__{timestamp}.json"
+            
+            # Convert result to JSON
+            import json
+            result_json = json.dumps(analysis_result, indent=2, ensure_ascii=False)
+            result_bytes = result_json.encode('utf-8')
+            
+            # Upload to results container
+            blob_client = self.blob_service_client.get_blob_client(
+                container=results_container,
+                blob=result_blob_name
+            )
+            
+            blob_client.upload_blob(
+                result_bytes,
+                overwrite=True,
+                content_settings=ContentSettings(content_type="application/json"),
+                metadata={
+                    "source_blob": blob_name,
+                    "analysis_timestamp": timestamp,
+                    "prompts_processed": str(analysis_result.get("prompts_processed", 0))
+                }
+            )
+            
+            logging.info(f"Stored analysis result: {result_blob_name} ({len(result_bytes)} bytes)")
+            
+            return {
+                "result_blob_name": result_blob_name,
+                "url": blob_client.url,
+                "size": len(result_bytes),
+                "container": results_container,
+                "source_blob": blob_name
+            }
+            
+        except Exception as e:
+            logging.error(f"Error storing analysis result: {e}")
             raise

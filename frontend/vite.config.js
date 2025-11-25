@@ -11,4 +11,12 @@ export default defineConfig({
       { find: /^src\/(.*)/, replacement: path.resolve(process.cwd(), 'src') + '/$1' },
     ],
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

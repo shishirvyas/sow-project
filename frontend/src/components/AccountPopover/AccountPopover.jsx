@@ -50,7 +50,7 @@ export default function AccountPopover() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1 }}>
             <Avatar sx={{ bgcolor: 'primary.main' }}>JD</Avatar>
             <Box>
-              <Typography variant="subtitle1">Jane Doe</Typography>
+              <Typography variant="subtitle1">Shishir Vyas</Typography>
               <Typography variant="body2" color="text.secondary">Product Manager</Typography>
             </Box>
           </Box>

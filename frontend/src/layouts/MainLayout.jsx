@@ -15,6 +15,7 @@ import AccountCircle from '@mui/icons-material/AccountCircle'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import DescriptionIcon from '@mui/icons-material/Description'
+import HistoryIcon from '@mui/icons-material/History'
 import { Link as RouterLink } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -152,6 +153,38 @@ export default function MainLayout({ children }) {
             </span>
           </Tooltip>
         </ListItem>
+        <ListItem disablePadding>
+          <Tooltip title="Analysis History" placement="right" disableHoverListener={!isMdUp || !collapsed}>
+            <span>
+              <ListItemButton
+                component={RouterLink}
+                to="/analysis-history"
+                onClick={() => setMobileOpen(false)}
+                sx={{ 
+                  justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', 
+                  px: 2,
+                  '&:hover': {
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.12)' : 'rgba(32,101,209,0.08)',
+                  }
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center', color: 'primary.main' }}>
+                  <HistoryIcon />
+                </ListItemIcon>
+                <ListItemText
+                  sx={{
+                    opacity: isMdUp && collapsed ? 0 : 1,
+                    transition: 'opacity 160ms ease, width 160ms ease',
+                    width: isMdUp && collapsed ? 0 : 'auto',
+                    overflow: 'hidden',
+                  }}
+                  primary="Analysis History"
+                  primaryTypographyProps={{ fontWeight: 600, color: 'primary.main' }}
+                />
+              </ListItemButton>
+            </span>
+          </Tooltip>
+        </ListItem>
       </List>
       
       <Divider />
@@ -234,7 +267,7 @@ export default function MainLayout({ children }) {
               <ListItemAvatar>
                 <Avatar sx={{ bgcolor: 'primary.main' }}>JD</Avatar>
               </ListItemAvatar>
-              <ListItemText primary="Jane Doe" secondary="Product Manager" />
+              <ListItemText primary="Shishir Vyas" />
             </ListItem>
             <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
               <Button size="small" variant="contained">

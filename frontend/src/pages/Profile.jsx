@@ -13,7 +13,7 @@ export default function Profile() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ width: 72, height: 72, bgcolor: 'primary.main' }}>JD</Avatar>
           <Box>
-            <Typography variant="h5">Jane Doe</Typography>
+            <Typography variant="h5">Shishir Vyas</Typography>
             <Typography variant="body2" color="text.secondary">Product Manager — SKOPE</Typography>
             <Box sx={{ mt: 2 }}>
               <Button variant="contained" size="small" sx={{ mr: 1 }}>

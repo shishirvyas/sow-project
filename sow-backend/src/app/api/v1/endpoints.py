@@ -108,16 +108,48 @@ def process_sow_from_blob(blob_name: str):
         blob_name: Name of the blob in Azure Storage (from upload response)
         
     Returns:
-        Analysis results from all configured prompts
+        Analysis results from all configured prompts with error information if any failures occurred
     """
+    from datetime import datetime
+    from src.app.services.sow_processor import SOWProcessor
+    from src.app.services.azure_blob_service import AzureBlobService
+    
+    blob_service = AzureBlobService()
+    start_time = datetime.now()
+    
     try:
-        from src.app.services.sow_processor import SOWProcessor
-        
         processor = SOWProcessor()
         results = processor.process_sow_from_blob(blob_name)
         
-        if "error" in results:
+        # Add timestamp and processing metadata
+        results["processing_started_at"] = start_time.isoformat()
+        results["processing_completed_at"] = datetime.now().isoformat()
+        
+        # Store ALL results in Azure Blob Storage (success, partial, or failed)
+        try:
+            storage_result = blob_service.store_analysis_result(blob_name, results)
+            results["storage"] = storage_result
+            logging.info(f"Analysis results stored: {storage_result['result_blob_name']}")
+        except Exception as storage_error:
+            logging.error(f"Failed to store analysis results in blob storage: {storage_error}")
+            results["storage_warning"] = "Analysis completed but results could not be stored in blob storage"
+        
+        # Check if processing completely failed (old error format for compatibility)
+        if "error" in results and results.get("status") != "failed":
             raise HTTPException(status_code=500, detail=results["error"])
+        
+        # If all prompts failed, return 500 with error details
+        if results.get("status") == "failed":
+            logging.error(f"All prompts failed for {blob_name}: {results.get('errors')}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "Analysis failed for all prompts",
+                    "blob_name": results.get("blob_name"),
+                    "errors": results.get("errors", []),
+                    "storage": results.get("storage")  # Include storage info even on failure
+                }
+            )
         
         return results
         
@@ -125,6 +157,169 @@ def process_sow_from_blob(blob_name: str):
         raise
     except Exception as e:
         logging.error(f"Error processing SOW: {e}", exc_info=True)
+        
+        # Store error result in blob storage for history
+        error_result = {
+            "blob_name": blob_name,
+            "status": "error",
+            "processing_started_at": start_time.isoformat(),
+            "processing_completed_at": datetime.now().isoformat(),
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "prompts_processed": 0,
+            "results": {}
+        }
+        
+        try:
+            storage_result = blob_service.store_analysis_result(blob_name, error_result)
+            logging.info(f"Error result stored: {storage_result['result_blob_name']}")
+        except Exception as storage_error:
+            logging.error(f"Failed to store error result in blob storage: {storage_error}")
+        
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/analysis-history")
+def get_analysis_history():
+    """
+    Get all analysis results from Azure Blob Storage
+    
+    Returns:
+        List of all analysis results with metadata
+    """
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        import json
+        
+        blob_service = AzureBlobService()
+        results_container = "sow-analysis-results"
+        
+        # Get container client
+        container_client = blob_service.blob_service_client.get_container_client(results_container)
+        
+        # Check if container exists
+        if not container_client.exists():
+            return {
+                "history": [],
+                "count": 0,
+                "success_count": 0,
+                "error_count": 0
+            }
+        
+        # List all blobs in results container
+        blobs = container_client.list_blobs()
+        
+        history = []
+        success_count = 0
+        error_count = 0
+        
+        for blob in blobs:
+            try:
+                # Download and parse each result
+                blob_client = container_client.get_blob_client(blob.name)
+                content = blob_client.download_blob().readall()
+                result_data = json.loads(content.decode('utf-8'))
+                
+                # Extract key metadata
+                status = result_data.get("status", "unknown")
+                
+                history_item = {
+                    "result_blob_name": blob.name,
+                    "source_blob": result_data.get("blob_name", "unknown"),
+                    "status": status,
+                    "prompts_processed": result_data.get("prompts_processed", 0),
+                    "processing_started_at": result_data.get("processing_started_at"),
+                    "processing_completed_at": result_data.get("processing_completed_at"),
+                    "has_errors": bool(result_data.get("errors")),
+                    "error_count": len(result_data.get("errors", [])),
+                    "created": blob.creation_time.isoformat() if blob.creation_time else None,
+                    "size": blob.size,
+                    "url": blob_client.url
+                }
+                
+                # Count success vs errors
+                if status in ["success", "partial_success"]:
+                    success_count += 1
+                elif status in ["failed", "error"]:
+                    error_count += 1
+                
+                history.append(history_item)
+                
+            except Exception as parse_error:
+                logging.error(f"Error parsing blob {blob.name}: {parse_error}")
+                # Add minimal info for unparseable blobs
+                history.append({
+                    "result_blob_name": blob.name,
+                    "source_blob": "unknown",
+                    "status": "parse_error",
+                    "error": str(parse_error),
+                    "created": blob.creation_time.isoformat() if blob.creation_time else None,
+                    "size": blob.size
+                })
+        
+        # Sort by creation time (newest first)
+        history.sort(key=lambda x: x.get("created", ""), reverse=True)
+        
+        return {
+            "history": history,
+            "count": len(history),
+            "success_count": success_count,
+            "error_count": error_count
+        }
+        
+    except Exception as e:
+        logging.error(f"Error fetching analysis history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/analysis-history/{result_blob_name:path}")
+def get_analysis_detail(result_blob_name: str):
+    """
+    Get detailed analysis result from Azure Blob Storage
+    
+    Args:
+        result_blob_name: Name of the result blob
+        
+    Returns:
+        Complete analysis result data
+    """
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        import json
+        
+        blob_service = AzureBlobService()
+        results_container = "sow-analysis-results"
+        
+        # Get blob client
+        blob_client = blob_service.blob_service_client.get_blob_client(
+            container=results_container,
+            blob=result_blob_name
+        )
+        
+        # Check if blob exists
+        if not blob_client.exists():
+            raise HTTPException(status_code=404, detail="Analysis result not found")
+        
+        # Download and parse result
+        content = blob_client.download_blob().readall()
+        result_data = json.loads(content.decode('utf-8'))
+        
+        # Get blob properties
+        properties = blob_client.get_blob_properties()
+        
+        # Add metadata
+        result_data["_metadata"] = {
+            "result_blob_name": result_blob_name,
+            "created": properties.creation_time.isoformat() if properties.creation_time else None,
+            "last_modified": properties.last_modified.isoformat() if properties.last_modified else None,
+            "size": properties.size,
+            "url": blob_client.url
+        }
+        
+        return result_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching analysis detail: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sows")

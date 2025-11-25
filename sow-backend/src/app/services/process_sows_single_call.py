@@ -163,13 +163,15 @@ def call_llm_single(system_prompt: str, user_prompt: str):
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429 and attempt < max_retries - 1:
                 continue  # Already handled above for Groq
-            raise
+            logging.error(f"HTTP error in LLM call: {e}")
+            return {"parsed": None, "raw": str(e), "error": str(e), "exception": e}
         except Exception as e:
             logging.error(f"LLM call failed: {type(e).__name__}: {e}")
-            return {"parsed": None, "raw": str(e), "error": True}
+            return {"parsed": None, "raw": str(e), "error": str(e), "exception": e}
     
     # Should not reach here, but just in case
-    return {"parsed": None, "raw": "Max retries exceeded", "error": True}
+    logging.error("Max retries exceeded for LLM call")
+    return {"parsed": None, "raw": "Max retries exceeded", "error": "Max retries exceeded"}
 
 # ---------- User prompt builder ----------
 

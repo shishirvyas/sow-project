@@ -10,6 +10,10 @@ from src.app.services.azure_blob_service import AzureBlobService
 from src.app.services.text_extraction_helpers import extract_text
 from src.app.services.main_flow import load_prompts_from_database, load_prompts
 from src.app.services.process_sows_single_call import call_llm_single, make_user_prompt_full
+from src.app.utils.error_codes import (
+    ErrorCode, create_error, is_timeout_error, 
+    is_config_error, is_rate_limit_error
+)
 import re
 
 class SOWProcessor:
@@ -81,42 +85,92 @@ class SOWProcessor:
                 
                 # Process with all prompts
                 results = {}
+                errors = []
+                
                 for prompt_name, system_prompt in prompts.items():
                     logging.info(f"Using prompt: {prompt_name}")
                     
-                    # Call LLM
-                    user_prompt = make_user_prompt_full(sow_text)
-                    response = call_llm_single(system_prompt, user_prompt)
-                    
-                    # Parse response
-                    parsed = response.get("parsed")
-                    if parsed and isinstance(parsed, dict):
-                        analysis = parsed
-                        analysis.setdefault("meta", {})
-                        analysis["meta"].update({
-                            "source_blob": blob_name,
-                            "prompt_name": prompt_name,
-                            "trigger_hits": pre_hits
-                        })
-                    else:
-                        # Fallback if parsing failed
-                        raw = response.get("raw", "NO_RAW")
-                        analysis = {
-                            "detected": False,
-                            "findings": [],
-                            "overall_risk": "none",
-                            "actions": [],
-                            "meta": {
+                    try:
+                        # Call LLM
+                        user_prompt = make_user_prompt_full(sow_text)
+                        response = call_llm_single(system_prompt, user_prompt)
+                        
+                        # Check if LLM call failed
+                        if response.get("error"):
+                            error_detail = response.get("error")
+                            exception = response.get("exception")
+                            
+                            # Determine error code based on exception type
+                            if exception:
+                                if is_config_error(exception):
+                                    error_code = ErrorCode.LL01
+                                elif is_timeout_error(exception):
+                                    error_code = ErrorCode.LL02
+                                elif is_rate_limit_error(exception):
+                                    error_code = ErrorCode.LL03
+                                else:
+                                    error_code = ErrorCode.LL05
+                            else:
+                                error_code = ErrorCode.LL05
+                            
+                            error = create_error(
+                                error_code,
+                                detail=error_detail,
+                                context={"prompt_name": prompt_name, "blob_name": blob_name}
+                            )
+                            errors.append(error)
+                            logging.error(f"LLM error for {prompt_name}: {error}")
+                            continue
+                        
+                        # Parse response
+                        parsed = response.get("parsed")
+                        if parsed and isinstance(parsed, dict):
+                            analysis = parsed
+                            analysis.setdefault("meta", {})
+                            analysis["meta"].update({
                                 "source_blob": blob_name,
                                 "prompt_name": prompt_name,
-                                "note": "LLM did not return JSON",
                                 "trigger_hits": pre_hits
+                            })
+                        else:
+                            # Fallback if parsing failed
+                            raw = response.get("raw", "NO_RAW")
+                            
+                            # Create error for invalid response format
+                            error = create_error(
+                                ErrorCode.LL04,
+                                detail="LLM did not return valid JSON",
+                                context={"prompt_name": prompt_name, "blob_name": blob_name}
+                            )
+                            errors.append(error)
+                            
+                            analysis = {
+                                "detected": False,
+                                "findings": [],
+                                "overall_risk": "none",
+                                "actions": [],
+                                "meta": {
+                                    "source_blob": blob_name,
+                                    "prompt_name": prompt_name,
+                                    "note": "LLM did not return JSON",
+                                    "trigger_hits": pre_hits
+                                }
                             }
-                        }
-                        
-                        # Save raw output
-                        raw_file = self.output_dir / f"{Path(blob_name).stem}__{prompt_name}__raw.txt"
-                        raw_file.write_text(raw, encoding="utf-8")
+                            
+                            # Save raw output
+                            raw_file = self.output_dir / f"{Path(blob_name).stem}__{prompt_name}__raw.txt"
+                            raw_file.write_text(raw, encoding="utf-8")
+                    
+                    except Exception as e:
+                        # Catch any unexpected errors during prompt processing
+                        logging.error(f"Unexpected error processing prompt {prompt_name}: {e}", exc_info=True)
+                        error = create_error(
+                            ErrorCode.GEN01,
+                            detail=str(e),
+                            context={"prompt_name": prompt_name, "blob_name": blob_name}
+                        )
+                        errors.append(error)
+                        continue
                     
                     # Deduplicate findings
                     findings = analysis.get("findings", [])
@@ -145,14 +199,33 @@ class SOWProcessor:
                     
                     results[prompt_name] = analysis
                 
+                # Check if all prompts failed
+                if not results and errors:
+                    logging.error(f"All prompts failed for {blob_name}")
+                    return {
+                        "blob_name": blob_name,
+                        "prompts_processed": 0,
+                        "results": {},
+                        "errors": errors,
+                        "trigger_hits": pre_hits,
+                        "status": "failed"
+                    }
+                
                 logging.info(f"Completed processing {blob_name} with {len(results)} prompts")
                 
-                return {
+                response = {
                     "blob_name": blob_name,
                     "prompts_processed": len(results),
                     "results": results,
-                    "trigger_hits": pre_hits
+                    "trigger_hits": pre_hits,
+                    "status": "success" if not errors else "partial_success"
                 }
+                
+                # Add errors if any occurred
+                if errors:
+                    response["errors"] = errors
+                
+                return response
                 
             finally:
                 # Clean up temp file
