@@ -119,11 +119,6 @@ export default function MainLayout({ children }) {
       <Divider />
       
       {/* Core Feature Section */}
-      <Box sx={{ px: 2, pt: 2, pb: 1, opacity: isMdUp && collapsed ? 0 : 1, transition: 'opacity 160ms ease' }}>
-        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.05em' }}>
-          CORE FEATURE
-        </Typography>
-      </Box>
       <List sx={{ bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.08)' : 'rgba(32,101,209,0.04)', py: 1 }}>
         <ListItem disablePadding>
           <Tooltip title="Analyze Doc" placement="right" disableHoverListener={!isMdUp || !collapsed}>
