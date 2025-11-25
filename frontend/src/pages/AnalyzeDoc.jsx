@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import MainLayout from '../layouts/MainLayout'
 import Typography from '@mui/material/Typography'
 import Card from '@mui/material/Card'
@@ -16,10 +17,16 @@ import Stepper from '@mui/material/Stepper'
 import Step from '@mui/material/Step'
 import StepLabel from '@mui/material/StepLabel'
 import Alert from '@mui/material/Alert'
+import Chip from '@mui/material/Chip'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
 
 const steps = ['Select File', 'Upload Document', 'Start Analysis']
 
 export default function AnalyzeDoc() {
+  const navigate = useNavigate()
   const [activeStep, setActiveStep] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState(null)
   const [blobName, setBlobName] = React.useState(null)
@@ -27,6 +34,8 @@ export default function AnalyzeDoc() {
   const [analyzing, setAnalyzing] = React.useState(false)
   const [result, setResult] = React.useState(null)
   const [error, setError] = React.useState(null)
+  const [recentAnalyses, setRecentAnalyses] = React.useState([])
+  const [loadingRecent, setLoadingRecent] = React.useState(false)
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -110,7 +119,53 @@ export default function AnalyzeDoc() {
     setBlobName(null)
     setResult(null)
     setError(null)
+    fetchRecentAnalyses() // Refresh recent analyses after completing workflow
   }
+
+  const fetchRecentAnalyses = async () => {
+    setLoadingRecent(true)
+    try {
+      const response = await fetch('/api/v1/analysis-history')
+      if (response.ok) {
+        const data = await response.json()
+        // Get only the 5 most recent analyses
+        setRecentAnalyses(data.history.slice(0, 5))
+      }
+    } catch (err) {
+      console.error('Failed to fetch recent analyses:', err)
+    } finally {
+      setLoadingRecent(false)
+    }
+  }
+
+  const handleViewAnalysis = (resultBlobName) => {
+    navigate(`/analysis-history/${encodeURIComponent(resultBlobName)}`)
+  }
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'success':
+        return 'success'
+      case 'partial_success':
+        return 'warning'
+      case 'failed':
+      case 'error':
+        return 'error'
+      default:
+        return 'default'
+    }
+  }
+
+  const formatDocName = (blobName) => {
+    // Extract filename from blob path
+    const parts = blobName.split('/')
+    return parts[parts.length - 1] || blobName
+  }
+
+  // Fetch recent analyses on component mount
+  React.useEffect(() => {
+    fetchRecentAnalyses()
+  }, [])
 
   return (
     <MainLayout>
@@ -367,9 +422,55 @@ export default function AnalyzeDoc() {
               <Typography variant="h6" gutterBottom>
                 Recent Analyses
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                No recent analyses yet. Upload your first document to get started.
-              </Typography>
+              {loadingRecent ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                  <CircularProgress size={24} />
+                </Box>
+              ) : recentAnalyses.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No recent analyses yet. Upload your first document to get started.
+                </Typography>
+              ) : (
+                <List dense disablePadding>
+                  {recentAnalyses.map((analysis) => (
+                    <ListItem key={analysis.result_blob_name} disablePadding>
+                      <ListItemButton
+                        onClick={() => handleViewAnalysis(analysis.result_blob_name)}
+                        sx={{
+                          borderRadius: 1,
+                          mb: 0.5,
+                          '&:hover': {
+                            bgcolor: 'action.hover',
+                          },
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Typography variant="body2" noWrap>
+                              {formatDocName(analysis.source_blob)}
+                            </Typography>
+                          }
+                          secondary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                              <Chip
+                                label={analysis.status}
+                                color={getStatusColor(analysis.status)}
+                                size="small"
+                                sx={{ height: 20, fontSize: '0.7rem' }}
+                              />
+                              {analysis.error_count > 0 && (
+                                <Typography variant="caption" color="error.main">
+                                  {analysis.error_count} error{analysis.error_count > 1 ? 's' : ''}
+                                </Typography>
+                              )}
+                            </Box>
+                          }
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </List>
+              )}
             </CardContent>
           </Card>
         </Grid>
