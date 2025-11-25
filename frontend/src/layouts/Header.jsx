@@ -8,12 +8,16 @@ import IconButton from '@mui/material/IconButton'
 import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import Brightness4Icon from '@mui/icons-material/Brightness4'
+import Brightness7Icon from '@mui/icons-material/Brightness7'
 import Tooltip from '@mui/material/Tooltip'
 import { Link as RouterLink } from 'react-router-dom'
 import AccountPopover from 'src/components/AccountPopover/AccountPopover'
 import NotificationsPopover from 'src/components/Notifications/NotificationsPopover'
+import { ThemeContext } from 'src/theme/ThemeProvider'
 
 export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) {
+  const { mode, toggleTheme } = React.useContext(ThemeContext)
   return (
     <AppBar position="sticky" color="inherit" elevation={1} sx={{ mb: 3 }}>
       <Toolbar sx={{ maxWidth: 1280, mx: 'auto', width: '100%' }}>
@@ -64,6 +68,12 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
           </Button>
           <NotificationsPopover />
           
+          <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <IconButton onClick={toggleTheme} color="inherit" sx={{ ml: 1 }}>
+              {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+            </IconButton>
+          </Tooltip>
+
           <Button component={RouterLink} to="/sign-in" color="primary" variant="outlined" sx={{ ml: 1 }}>
             Sign In
           </Button>
