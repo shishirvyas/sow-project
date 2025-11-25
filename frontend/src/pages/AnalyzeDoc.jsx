@@ -5,22 +5,97 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
+import CircularProgress from '@mui/material/CircularProgress'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import Grid from '@mui/material/Grid'
+import Stepper from '@mui/material/Stepper'
+import Step from '@mui/material/Step'
+import StepLabel from '@mui/material/StepLabel'
+import Alert from '@mui/material/Alert'
+
+const steps = ['Select File', 'Upload Document', 'Start Analysis']
 
 export default function AnalyzeDoc() {
+  const [activeStep, setActiveStep] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState(null)
+  const [blobName, setBlobName] = React.useState(null)
+  const [uploading, setUploading] = React.useState(false)
+  const [analyzing, setAnalyzing] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+  const [error, setError] = React.useState(null)
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0])
+      setActiveStep(1)
+      setError(null)
     }
   }
 
-  const handleAnalyze = () => {
+  const handleUpload = async () => {
     if (!selectedFile) return
-    // TODO: Implement document analysis logic
-    console.log('Analyzing:', selectedFile.name)
+    
+    setUploading(true)
+    setError(null)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+      
+      const response = await fetch('/api/v1/upload-sow', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      setBlobName(data.blob_name)
+      setActiveStep(2)
+    } catch (err) {
+      setError(err.message || 'Failed to upload document')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleAnalyze = async () => {
+    if (!blobName) return
+    
+    setAnalyzing(true)
+    setError(null)
+    
+    try {
+      const response = await fetch(`/api/v1/process-sow/${encodeURIComponent(blobName)}`, {
+        method: 'POST',
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Analysis failed: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      setResult(data)
+      setActiveStep(3)
+    } catch (err) {
+      setError(err.message || 'Failed to analyze document')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const handleReset = () => {
+    setActiveStep(0)
+    setSelectedFile(null)
+    setBlobName(null)
+    setResult(null)
+    setError(null)
   }
 
   return (
@@ -30,80 +105,199 @@ export default function AnalyzeDoc() {
           Analyze Document
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Upload a document (PDF, DOCX, TXT) to analyze its content and extract insights.
+          Follow the workflow below to analyze your document.
         </Typography>
       </Box>
 
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
       <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12}>
           <Card elevation={2}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Upload Document
-              </Typography>
-              
-              <Box
-                sx={{
-                  border: '2px dashed',
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  p: 4,
-                  textAlign: 'center',
-                  bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-                  transition: 'all 200ms ease',
-                  '&:hover': {
-                    borderColor: 'primary.main',
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.05)' : 'rgba(32,101,209,0.05)',
-                  },
-                }}
-              >
-                <CloudUploadIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="body1" gutterBottom>
-                  Drag and drop your document here, or click to browse
-                </Typography>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-                  Supported formats: PDF, DOCX, TXT (Max 10MB)
-                </Typography>
-                
-                <Button
-                  variant="contained"
-                  component="label"
-                  startIcon={<CloudUploadIcon />}
-                >
-                  Choose File
-                  <input
-                    type="file"
-                    hidden
-                    accept=".pdf,.docx,.txt"
-                    onChange={handleFileChange}
-                  />
-                </Button>
+              <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+                {steps.map((label) => (
+                  <Step key={label}>
+                    <StepLabel>{label}</StepLabel>
+                  </Step>
+                ))}
+              </Stepper>
+
+              {/* Workflow Steps as Circular Buttons */}
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, py: 4 }}>
+                {/* Step 1: Select File */}
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box
+                    sx={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: activeStep >= 0 ? 'primary.main' : 'action.disabledBackground',
+                      color: 'white',
+                      mb: 2,
+                      position: 'relative',
+                      cursor: activeStep === 0 ? 'pointer' : 'default',
+                      transition: 'all 200ms ease',
+                      border: '4px solid',
+                      borderColor: activeStep === 0 ? 'primary.light' : 'transparent',
+                      '&:hover': activeStep === 0 ? {
+                        transform: 'scale(1.05)',
+                        boxShadow: 4,
+                      } : {},
+                    }}
+                  >
+                    <IconButton
+                      component="label"
+                      sx={{ color: 'inherit', width: '100%', height: '100%' }}
+                      disabled={activeStep > 0}
+                    >
+                      {activeStep > 0 ? (
+                        <CheckCircleIcon sx={{ fontSize: 48 }} />
+                      ) : (
+                        <FolderOpenIcon sx={{ fontSize: 48 }} />
+                      )}
+                      <input
+                        type="file"
+                        hidden
+                        accept=".pdf,.docx,.txt"
+                        onChange={handleFileChange}
+                      />
+                    </IconButton>
+                  </Box>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Select File
+                  </Typography>
+                  {selectedFile && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {selectedFile.name}
+                    </Typography>
+                  )}
+                </Box>
+
+                <Box sx={{ fontSize: 32, color: 'text.secondary' }}>→</Box>
+
+                {/* Step 2: Upload */}
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box
+                    sx={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: activeStep >= 2 ? 'primary.main' : activeStep === 1 ? 'primary.main' : 'action.disabledBackground',
+                      color: 'white',
+                      mb: 2,
+                      cursor: activeStep === 1 ? 'pointer' : 'default',
+                      transition: 'all 200ms ease',
+                      border: '4px solid',
+                      borderColor: activeStep === 1 ? 'primary.light' : 'transparent',
+                      '&:hover': activeStep === 1 ? {
+                        transform: 'scale(1.05)',
+                        boxShadow: 4,
+                      } : {},
+                    }}
+                    onClick={activeStep === 1 ? handleUpload : undefined}
+                  >
+                    {uploading ? (
+                      <CircularProgress size={48} sx={{ color: 'white' }} />
+                    ) : activeStep > 1 ? (
+                      <CheckCircleIcon sx={{ fontSize: 48 }} />
+                    ) : (
+                      <CloudUploadIcon sx={{ fontSize: 48 }} />
+                    )}
+                  </Box>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Upload
+                  </Typography>
+                  {blobName && (
+                    <Typography variant="caption" color="success.main" display="block">
+                      Uploaded successfully
+                    </Typography>
+                  )}
+                </Box>
+
+                <Box sx={{ fontSize: 32, color: 'text.secondary' }}>→</Box>
+
+                {/* Step 3: Analyze */}
+                <Box sx={{ textAlign: 'center' }}>
+                  <Box
+                    sx={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: activeStep >= 3 ? 'success.main' : activeStep === 2 ? 'primary.main' : 'action.disabledBackground',
+                      color: 'white',
+                      mb: 2,
+                      cursor: activeStep === 2 ? 'pointer' : 'default',
+                      transition: 'all 200ms ease',
+                      border: '4px solid',
+                      borderColor: activeStep === 2 ? 'primary.light' : 'transparent',
+                      '&:hover': activeStep === 2 ? {
+                        transform: 'scale(1.05)',
+                        boxShadow: 4,
+                      } : {},
+                    }}
+                    onClick={activeStep === 2 ? handleAnalyze : undefined}
+                  >
+                    {analyzing ? (
+                      <CircularProgress size={48} sx={{ color: 'white' }} />
+                    ) : activeStep > 2 ? (
+                      <CheckCircleIcon sx={{ fontSize: 48 }} />
+                    ) : (
+                      <PlayArrowIcon sx={{ fontSize: 48 }} />
+                    )}
+                  </Box>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Start Analysis
+                  </Typography>
+                  {result && (
+                    <Typography variant="caption" color="success.main" display="block">
+                      Analysis complete
+                    </Typography>
+                  )}
+                </Box>
               </Box>
 
-              {selectedFile && (
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Typography variant="body2" gutterBottom>
-                    <strong>Selected file:</strong> {selectedFile.name}
+              {/* Results Section */}
+              {result && (
+                <Box sx={{ mt: 4, p: 3, bgcolor: 'action.hover', borderRadius: 2 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Analysis Results
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Size: {(selectedFile.size / 1024).toFixed(2)} KB
-                  </Typography>
-                  
-                  <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={handleAnalyze}
-                    >
-                      Analyze Document
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      onClick={() => setSelectedFile(null)}
-                    >
-                      Clear
-                    </Button>
+                  <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {JSON.stringify(result, null, 2)}
+                    </pre>
                   </Box>
+                  <Button variant="outlined" onClick={handleReset} sx={{ mt: 2 }}>
+                    Analyze Another Document
+                  </Button>
+                </Box>
+              )}
+
+              {/* Instructions */}
+              {activeStep < 3 && !result && (
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'info.lighter', borderRadius: 1 }}>
+                  <Typography variant="body2" color="info.darker">
+                    <strong>Current Step:</strong> {steps[activeStep]}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                    {activeStep === 0 && 'Click the circular button above to select a document (PDF, DOCX, or TXT).'}
+                    {activeStep === 1 && 'Click the Upload button to upload your selected document to the server.'}
+                    {activeStep === 2 && 'Click the Start Analysis button to begin processing your document.'}
+                  </Typography>
                 </Box>
               )}
             </CardContent>
