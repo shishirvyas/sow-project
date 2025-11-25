@@ -9,6 +9,7 @@ const Products = lazy(() => import('src/pages/Products'))
 const Profile = lazy(() => import('src/pages/Profile'))
 const Notifications = lazy(() => import('src/pages/Notifications'))
 const Settings = lazy(() => import('src/pages/Settings'))
+const AnalyzeDoc = lazy(() => import('src/pages/AnalyzeDoc'))
 
 const Loading = () => (
   <Box sx={{ width: '100%', mt: 6 }}>
@@ -22,6 +23,7 @@ export default function AppRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/analyze-doc" element={<AnalyzeDoc />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/products" element={<Products />} />
         <Route path="/notifications" element={<Notifications />} />

@@ -14,6 +14,7 @@ import Divider from '@mui/material/Divider'
 import AccountCircle from '@mui/icons-material/AccountCircle'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
+import DescriptionIcon from '@mui/icons-material/Description'
 import { Link as RouterLink } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -115,6 +116,49 @@ export default function MainLayout({ children }) {
           </Tooltip>
         </ListItem>
       </List>
+      <Divider />
+      
+      {/* Core Feature Section */}
+      <Box sx={{ px: 2, pt: 2, pb: 1, opacity: isMdUp && collapsed ? 0 : 1, transition: 'opacity 160ms ease' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.05em' }}>
+          CORE FEATURE
+        </Typography>
+      </Box>
+      <List sx={{ bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.08)' : 'rgba(32,101,209,0.04)', py: 1 }}>
+        <ListItem disablePadding>
+          <Tooltip title="Analyze Doc" placement="right" disableHoverListener={!isMdUp || !collapsed}>
+            <span>
+              <ListItemButton
+                component={RouterLink}
+                to="/analyze-doc"
+                onClick={() => setMobileOpen(false)}
+                sx={{ 
+                  justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', 
+                  px: 2,
+                  '&:hover': {
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.12)' : 'rgba(32,101,209,0.08)',
+                  }
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center', color: 'primary.main' }}>
+                  <DescriptionIcon />
+                </ListItemIcon>
+                <ListItemText
+                  sx={{
+                    opacity: isMdUp && collapsed ? 0 : 1,
+                    transition: 'opacity 160ms ease, width 160ms ease',
+                    width: isMdUp && collapsed ? 0 : 'auto',
+                    overflow: 'hidden',
+                  }}
+                  primary="Analyze Doc"
+                  primaryTypographyProps={{ fontWeight: 600, color: 'primary.main' }}
+                />
+              </ListItemButton>
+            </span>
+          </Tooltip>
+        </ListItem>
+      </List>
+      
       <Divider />
       <List>
         <ListItem disablePadding>
