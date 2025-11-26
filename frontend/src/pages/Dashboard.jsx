@@ -1,5 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getApiUrl } from '../config/api'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -33,7 +34,7 @@ export default function Dashboard() {
   const [profile, setProfile] = React.useState(null)
 
   React.useEffect(() => {
-    fetch('/api/v1/profile')
+    fetch(getApiUrl('api/v1/profile'))
       .then(res => res.json())
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))
