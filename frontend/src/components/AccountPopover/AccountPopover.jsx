@@ -1,5 +1,5 @@
 import React from 'react'
-import { getApiUrl } from '../../config/api'
+import { apiFetch } from '../../config/api'
 import Avatar from '@mui/material/Avatar'
 import Popover from '@mui/material/Popover'
 import Box from '@mui/material/Box'
@@ -16,7 +16,7 @@ export default function AccountPopover() {
   const [profile, setProfile] = React.useState(null)
 
   React.useEffect(() => {
-    fetch(getApiUrl('api/v1/profile'))
+    apiFetch('api/v1/profile')
       .then(res => res.json())
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))
