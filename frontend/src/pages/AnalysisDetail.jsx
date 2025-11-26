@@ -36,7 +36,7 @@ export default function AnalysisDetail() {
     setError(null)
 
     try {
-      const response = await fetch(getApiUrl(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}`))
+      const response = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}`)
 
       if (!response.ok) {
         if (response.status === 404) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getApiUrl } from '../config/api'
+import { apiFetch } from '../config/api'
 import Container from '@mui/material/Container'
 import Box from '@mui/material/Box'
 import Header from './Header'
@@ -49,7 +49,7 @@ export default function MainLayout({ children }) {
 
   // Fetch profile data
   useEffect(() => {
-    fetch(getApiUrl('api/v1/profile'))
+    apiFetch('api/v1/profile')
       .then(res => res.json())
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))
