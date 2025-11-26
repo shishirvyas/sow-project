@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
@@ -7,6 +8,7 @@ import Button from '@mui/material/Button'
 import MainLayout from '../layouts/MainLayout'
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   return (
     <MainLayout>
       <Box sx={{ mb: 3 }}>
@@ -226,7 +228,7 @@ export default function Dashboard() {
                 color: 'primary.main',
                 '&:hover': { bgcolor: 'grey.100' }
               }}
-              href="/analyze-doc"
+              onClick={() => navigate('/analyze-doc')}
             >
               Analyze Document Now
             </Button>

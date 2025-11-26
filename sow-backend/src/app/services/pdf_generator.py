@@ -199,6 +199,13 @@ class PDFGenerator:
             elements.append(Paragraph("Analysis Results", self.styles['SectionHeader']))
             
             for result in results:
+                # Handle both string and dict results
+                if isinstance(result, str):
+                    elements.append(Paragraph(result, self.styles['Normal']))
+                    elements.append(Spacer(1, 0.1*inch))
+                    continue
+                
+                # Handle dict results
                 clause_id = result.get('clause_id', 'Unknown')
                 prompt_name = result.get('prompt_name', 'N/A')
                 
@@ -211,6 +218,12 @@ class PDFGenerator:
                     elements.append(Paragraph("<b>Findings:</b>", self.styles['Normal']))
                     
                     for finding in findings:
+                        # Handle string findings
+                        if isinstance(finding, str):
+                            elements.append(Paragraph(f"• {finding}", self.styles['Normal']))
+                            continue
+                        
+                        # Handle dict findings
                         finding_text = f"• <b>{finding.get('title', 'Finding')}</b>"
                         elements.append(Paragraph(finding_text, self.styles['Normal']))
                         
@@ -235,19 +248,20 @@ class PDFGenerator:
                         
                         elements.append(Spacer(1, 0.1*inch))
                 
-                # Summary
-                if result.get('summary'):
+                # Summary (only for dict results)
+                if isinstance(result, dict) and result.get('summary'):
                     elements.append(Paragraph("<b>Summary:</b>", self.styles['Normal']))
                     elements.append(Paragraph(result['summary'], self.styles['Normal']))
                     elements.append(Spacer(1, 0.1*inch))
                 
-                # Next Steps
-                next_steps = result.get('next_steps', [])
-                if next_steps:
-                    elements.append(Paragraph("<b>Next Steps:</b>", self.styles['Normal']))
-                    for step in next_steps:
-                        elements.append(Paragraph(f"• {step}", self.styles['Normal']))
-                    elements.append(Spacer(1, 0.1*inch))
+                # Next Steps (only for dict results)
+                if isinstance(result, dict):
+                    next_steps = result.get('next_steps', [])
+                    if next_steps:
+                        elements.append(Paragraph("<b>Next Steps:</b>", self.styles['Normal']))
+                        for step in next_steps:
+                            elements.append(Paragraph(f"• {step}", self.styles['Normal']))
+                        elements.append(Spacer(1, 0.1*inch))
                 
                 elements.append(Spacer(1, 0.2*inch))
         

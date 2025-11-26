@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Response, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, Response, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from src.app.core.config import settings
@@ -179,7 +179,7 @@ def process_sow_from_blob(blob_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analysis-history")
-def get_analysis_history():
+def get_analysis_history(request: Request):
     """
     Get all analysis results from Azure Blob Storage
     
@@ -222,8 +222,10 @@ def get_analysis_history():
                 # Extract key metadata
                 status = result_data.get("status", "unknown")
                 
-                # Check if PDF exists
-                pdf_url = blob_service.get_analysis_pdf_url(blob.name)
+                # Check if PDF exists and generate API URL
+                pdf_exists = blob_service.pdf_exists(blob.name)
+                api_base = str(request.base_url).rstrip('/')
+                pdf_url = f"{api_base}/api/v1/analysis-history/{blob.name}/download-pdf" if pdf_exists else None
                 
                 history_item = {
                     "result_blob_name": blob.name,
@@ -237,7 +239,7 @@ def get_analysis_history():
                     "created": blob.creation_time.isoformat() if blob.creation_time else None,
                     "size": blob.size,
                     "url": blob_client.url,
-                    "pdf_available": pdf_url is not None,
+                    "pdf_available": pdf_exists,
                     "pdf_url": pdf_url
                 }
                 
@@ -275,6 +277,191 @@ def get_analysis_history():
         logging.error(f"Error fetching analysis history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+# PDF endpoints - MUST come before the detail route to match properly
+@router.post("/analysis-history/{result_blob_name:path}/generate-pdf")
+async def generate_analysis_pdf(result_blob_name: str, request: Request, background_tasks: BackgroundTasks):
+    """
+    Generate PDF for analysis result and upload to Azure Blob Storage
+    
+    Args:
+        result_blob_name: Name of the result blob
+        background_tasks: FastAPI background tasks
+        
+    Returns:
+        Status and PDF URL when ready
+    """
+    logging.info(f"[PDF GENERATE] Starting PDF generation for: {result_blob_name}")
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        from src.app.services.pdf_generator import PDFGenerator
+        import json
+        
+        blob_service = AzureBlobService()
+        
+        # Check if PDF already exists
+        logging.info(f"[PDF GENERATE] Checking if PDF already exists for: {result_blob_name}")
+        pdf_exists = blob_service.pdf_exists(result_blob_name)
+        if pdf_exists:
+            logging.info(f"[PDF GENERATE] PDF already exists, returning existing URL")
+            api_base = str(request.base_url).rstrip('/')
+            download_url = f"{api_base}/api/v1/analysis-history/{result_blob_name}/download-pdf"
+            logging.info(f"[PDF GENERATE] Download URL: {download_url}")
+            
+            return {
+                "status": "already_exists",
+                "message": "PDF already generated",
+                "pdf_url": download_url,
+                "pdf_blob_name": result_blob_name.replace('.json', '.pdf')
+            }
+        
+        # Get analysis result data
+        results_container = "sow-analysis-results"
+        blob_client = blob_service.blob_service_client.get_blob_client(
+            container=results_container,
+            blob=result_blob_name
+        )
+        
+        if not blob_client.exists():
+            logging.error(f"[PDF GENERATE] Analysis result not found: {result_blob_name}")
+            raise HTTPException(status_code=404, detail="Analysis result not found")
+        
+        logging.info(f"[PDF GENERATE] Downloading analysis data from blob storage")
+        content = blob_client.download_blob().readall()
+        analysis_data = json.loads(content.decode('utf-8'))
+        logging.info(f"[PDF GENERATE] Analysis data loaded, size: {len(content)} bytes")
+        
+        # Generate PDF
+        logging.info(f"[PDF GENERATE] Starting PDF generation with PDFGenerator")
+        pdf_generator = PDFGenerator()
+        pdf_buffer = pdf_generator.generate_analysis_pdf(analysis_data)
+        logging.info(f"[PDF GENERATE] PDF generated, buffer size: {pdf_buffer.getbuffer().nbytes} bytes")
+        
+        # Upload PDF to blob storage
+        logging.info(f"[PDF GENERATE] Uploading PDF to Azure Blob Storage")
+        pdf_info = blob_service.store_analysis_pdf(result_blob_name, pdf_buffer)
+        logging.info(f"[PDF GENERATE] PDF uploaded successfully: {pdf_info['pdf_blob_name']}, size: {pdf_info['size']}")
+        
+        # Return our API endpoint instead of Azure blob URL
+        api_base = str(request.base_url).rstrip('/')
+        download_url = f"{api_base}/api/v1/analysis-history/{result_blob_name}/download-pdf"
+        
+        return {
+            "status": "success",
+            "message": "PDF generated successfully",
+            "pdf_url": download_url,
+            "pdf_blob_name": pdf_info['pdf_blob_name'],
+            "size": pdf_info['size']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error generating PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/analysis-history/{result_blob_name:path}/pdf-url")
+def get_analysis_pdf_url(result_blob_name: str, request: Request):
+    """
+    Check PDF availability and return API download endpoint
+    
+    Args:
+        result_blob_name: Name of the result blob
+        request: FastAPI request object
+        
+    Returns:
+        PDF status and API download URL
+    """
+    logging.info(f"[PDF URL CHECK] Checking PDF availability for: {result_blob_name}")
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        
+        blob_service = AzureBlobService()
+        pdf_exists = blob_service.pdf_exists(result_blob_name)
+        logging.info(f"[PDF URL CHECK] PDF exists: {pdf_exists}")
+        logging.info(f"[PDF URL CHECK] PDF exists: {pdf_exists}")
+        
+        if pdf_exists:
+            # Return our API endpoint instead of Azure blob URL
+            api_base = str(request.base_url).rstrip('/')
+            download_url = f"{api_base}/api/v1/analysis-history/{result_blob_name}/download-pdf"
+            logging.info(f"[PDF URL CHECK] Returning available status with URL: {download_url}")
+            
+            return {
+                "status": "available",
+                "pdf_url": download_url,
+                "pdf_blob_name": result_blob_name.replace('.json', '.pdf')
+            }
+        else:
+            return {
+                "status": "not_generated",
+                "message": "PDF not yet generated. Use generate-pdf endpoint to create it."
+            }
+        
+    except Exception as e:
+        logging.error(f"Error getting PDF URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/analysis-history/{result_blob_name:path}/download-pdf")
+def download_analysis_pdf(result_blob_name: str):
+    """
+    Download PDF for analysis result
+    
+    Args:
+        result_blob_name: Name of the result blob
+        
+    Returns:
+        PDF file stream
+    """
+    logging.info(f"[PDF DOWNLOAD] Download request received for: {result_blob_name}")
+    try:
+        from src.app.services.azure_blob_service import AzureBlobService
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        blob_service = AzureBlobService()
+        pdfs_container = "sow-analysis-pdfs"
+        base_name = result_blob_name.replace('.json', '')
+        pdf_blob_name = f"{base_name}.pdf"
+        
+        logging.info(f"[PDF DOWNLOAD] Looking for PDF: {pdf_blob_name} in container: {pdfs_container}")
+        
+        # Get PDF blob client
+        blob_client = blob_service.blob_service_client.get_blob_client(
+            container=pdfs_container,
+            blob=pdf_blob_name
+        )
+        
+        if not blob_client.exists():
+            logging.error(f"[PDF DOWNLOAD] PDF not found in blob storage: {pdf_blob_name}")
+            raise HTTPException(
+                status_code=404, 
+                detail="PDF not found. Generate it first using the generate-pdf endpoint."
+            )
+        
+        # Download PDF
+        logging.info(f"[PDF DOWNLOAD] Downloading PDF from Azure Blob Storage")
+        pdf_data = blob_client.download_blob().readall()
+        logging.info(f"[PDF DOWNLOAD] PDF downloaded, size: {len(pdf_data)} bytes")
+        
+        logging.info(f"[PDF DOWNLOAD] Creating StreamingResponse with Content-Disposition: attachment; filename={pdf_blob_name}")
+        response = StreamingResponse(
+            io.BytesIO(pdf_data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={pdf_blob_name}",
+                "Content-Length": str(len(pdf_data))
+            }
+        )
+        logging.info(f"[PDF DOWNLOAD] StreamingResponse created successfully")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error downloading PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Detail route - MUST come after PDF routes to avoid matching /pdf-url paths
 @router.get("/analysis-history/{result_blob_name:path}")
 def get_analysis_detail(result_blob_name: str):
     """
@@ -325,154 +512,6 @@ def get_analysis_detail(result_blob_name: str):
         raise
     except Exception as e:
         logging.error(f"Error fetching analysis detail: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/analysis-history/{result_blob_name:path}/generate-pdf")
-async def generate_analysis_pdf(result_blob_name: str, background_tasks: BackgroundTasks):
-    """
-    Generate PDF for analysis result and upload to Azure Blob Storage
-    
-    Args:
-        result_blob_name: Name of the result blob
-        background_tasks: FastAPI background tasks
-        
-    Returns:
-        Status and PDF URL when ready
-    """
-    try:
-        from src.app.services.azure_blob_service import AzureBlobService
-        from src.app.services.pdf_generator import PDFGenerator
-        import json
-        
-        blob_service = AzureBlobService()
-        
-        # Check if PDF already exists
-        existing_pdf_url = blob_service.get_analysis_pdf_url(result_blob_name)
-        if existing_pdf_url:
-            return {
-                "status": "already_exists",
-                "message": "PDF already generated",
-                "pdf_url": existing_pdf_url,
-                "pdf_blob_name": result_blob_name.replace('.json', '.pdf')
-            }
-        
-        # Get analysis result data
-        results_container = "sow-analysis-results"
-        blob_client = blob_service.blob_service_client.get_blob_client(
-            container=results_container,
-            blob=result_blob_name
-        )
-        
-        if not blob_client.exists():
-            raise HTTPException(status_code=404, detail="Analysis result not found")
-        
-        content = blob_client.download_blob().readall()
-        analysis_data = json.loads(content.decode('utf-8'))
-        
-        # Generate PDF
-        pdf_generator = PDFGenerator()
-        pdf_buffer = pdf_generator.generate_analysis_pdf(analysis_data)
-        
-        # Upload PDF to blob storage
-        pdf_info = blob_service.store_analysis_pdf(result_blob_name, pdf_buffer)
-        
-        logging.info(f"Generated PDF for {result_blob_name}: {pdf_info['pdf_blob_name']}")
-        
-        return {
-            "status": "success",
-            "message": "PDF generated successfully",
-            "pdf_url": pdf_info['url'],
-            "pdf_blob_name": pdf_info['pdf_blob_name'],
-            "size": pdf_info['size']
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error generating PDF: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/analysis-history/{result_blob_name:path}/pdf-url")
-def get_analysis_pdf_url(result_blob_name: str):
-    """
-    Get PDF download URL for analysis result
-    
-    Args:
-        result_blob_name: Name of the result blob
-        
-    Returns:
-        PDF URL or status
-    """
-    try:
-        from src.app.services.azure_blob_service import AzureBlobService
-        
-        blob_service = AzureBlobService()
-        pdf_url = blob_service.get_analysis_pdf_url(result_blob_name)
-        
-        if pdf_url:
-            return {
-                "status": "available",
-                "pdf_url": pdf_url,
-                "pdf_blob_name": result_blob_name.replace('.json', '.pdf')
-            }
-        else:
-            return {
-                "status": "not_generated",
-                "message": "PDF not yet generated. Use generate-pdf endpoint to create it."
-            }
-        
-    except Exception as e:
-        logging.error(f"Error getting PDF URL: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/analysis-history/{result_blob_name:path}/download-pdf")
-def download_analysis_pdf(result_blob_name: str):
-    """
-    Download PDF for analysis result
-    
-    Args:
-        result_blob_name: Name of the result blob
-        
-    Returns:
-        PDF file stream
-    """
-    try:
-        from src.app.services.azure_blob_service import AzureBlobService
-        from fastapi.responses import StreamingResponse
-        import io
-        
-        blob_service = AzureBlobService()
-        pdfs_container = "sow-analysis-pdfs"
-        base_name = result_blob_name.replace('.json', '')
-        pdf_blob_name = f"{base_name}.pdf"
-        
-        # Get PDF blob client
-        blob_client = blob_service.blob_service_client.get_blob_client(
-            container=pdfs_container,
-            blob=pdf_blob_name
-        )
-        
-        if not blob_client.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail="PDF not found. Generate it first using the generate-pdf endpoint."
-            )
-        
-        # Download PDF
-        pdf_data = blob_client.download_blob().readall()
-        
-        return StreamingResponse(
-            io.BytesIO(pdf_data),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={pdf_blob_name}"
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error downloading PDF: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sows")
