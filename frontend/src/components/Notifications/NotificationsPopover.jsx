@@ -24,11 +24,23 @@ const STORAGE_KEY = 'skope_notifications_viewed'
 // Helper to check if a date is today
 function isToday(dateString) {
   if (!dateString) return false
-  const date = new Date(dateString)
-  const today = new Date()
-  return date.getDate() === today.getDate() &&
-         date.getMonth() === today.getMonth() &&
-         date.getFullYear() === today.getFullYear()
+  
+  try {
+    const date = new Date(dateString)
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return false
+    
+    const today = new Date()
+    
+    // Compare date components (ignoring time)
+    return date.getDate() === today.getDate() &&
+           date.getMonth() === today.getMonth() &&
+           date.getFullYear() === today.getFullYear()
+  } catch (err) {
+    console.error('Error parsing date:', dateString, err)
+    return false
+  }
 }
 
 // Helper to format time ago
@@ -93,12 +105,27 @@ export default function NotificationsPopover() {
       const response = await apiFetch('api/v1/analysis-history')
       const { history } = response
       
+      console.log('📊 Fetching today\'s analyses. Total history items:', history.length)
+      
       // Filter for today's completed analyses
       const todaysAnalyses = history.filter(item => {
+        const completedDate = item.processing_completed_at || item.created
         const isCompletedToday = isToday(item.processing_completed_at) || isToday(item.created)
         const isCompleted = ['success', 'partial_success'].includes(item.status)
+        
+        console.log('📅 Checking item:', {
+          blob: item.result_blob_name,
+          completed_at: item.processing_completed_at,
+          created: item.created,
+          status: item.status,
+          isToday: isCompletedToday,
+          isCompleted: isCompleted
+        })
+        
         return isCompletedToday && isCompleted
       })
+      
+      console.log('✅ Found today\'s completed analyses:', todaysAnalyses.length)
       
       // Transform to notification format
       const notifications = todaysAnalyses.map(item => ({

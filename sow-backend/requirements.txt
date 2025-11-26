@@ -17,3 +17,5 @@ httpx
 psycopg2-binary
 azure-storage-blob
 python-multipart
+reportlab
+weasyprint

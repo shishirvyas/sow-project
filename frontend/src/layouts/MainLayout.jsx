@@ -48,11 +48,23 @@ function getInitials(name) {
 // Helper to check if a date is today
 function isToday(dateString) {
   if (!dateString) return false
-  const date = new Date(dateString)
-  const today = new Date()
-  return date.getDate() === today.getDate() &&
-         date.getMonth() === today.getMonth() &&
-         date.getFullYear() === today.getFullYear()
+  
+  try {
+    const date = new Date(dateString)
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return false
+    
+    const today = new Date()
+    
+    // Compare date components (ignoring time)
+    return date.getDate() === today.getDate() &&
+           date.getMonth() === today.getMonth() &&
+           date.getFullYear() === today.getFullYear()
+  } catch (err) {
+    console.error('Error parsing date:', dateString, err)
+    return false
+  }
 }
 
 // Helper to format time ago
@@ -114,12 +126,26 @@ export default function MainLayout({ children }) {
       const response = await apiFetch('api/v1/analysis-history')
       const { history } = response
       
+      console.log('👉 MainLayout: Checking today\'s analyses. Total items:', history.length)
+      
       // Filter for today's completed analyses
       const todaysCompleted = history.filter(item => {
         const isCompletedToday = isToday(item.processing_completed_at) || isToday(item.created)
         const isCompleted = ['success', 'partial_success'].includes(item.status)
+        
+        if (isCompleted) {
+          console.log('📅 MainLayout item:', {
+            blob: item.result_blob_name,
+            completed_at: item.processing_completed_at,
+            created: item.created,
+            isToday: isCompletedToday
+          })
+        }
+        
         return isCompletedToday && isCompleted
       })
+      
+      console.log('✅ MainLayout: Found', todaysCompleted.length, 'completed today')
       
       // Take only the 3 most recent
       setTodaysAnalyses(todaysCompleted.slice(0, 3))

@@ -20,6 +20,8 @@ import Accordion from '@mui/material/Accordion'
 import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import DownloadIcon from '@mui/icons-material/Download'
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
 
 export default function AnalysisDetail() {
   const { resultBlobName } = useParams()
@@ -27,10 +29,85 @@ export default function AnalysisDetail() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState(null)
   const [data, setData] = React.useState(null)
+  const [downloadingPDF, setDownloadingPDF] = React.useState(false)
+  const [pdfAvailable, setPdfAvailable] = React.useState(false)
 
   React.useEffect(() => {
     fetchDetail()
+    checkPDFAvailability()
   }, [resultBlobName])
+
+  const checkPDFAvailability = async () => {
+    try {
+      const response = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.warn('PDF endpoint not found for this analysis')
+          setPdfAvailable(false)
+          return
+        }
+      }
+      
+      const data = await response.json()
+      setPdfAvailable(data.status === 'available')
+    } catch (err) {
+      console.error('Error checking PDF availability:', err)
+      setPdfAvailable(false)
+    }
+  }
+
+  const handleDownloadPDF = async () => {
+    setDownloadingPDF(true)
+    setError(null)
+    
+    try {
+      // First check if PDF exists
+      const statusResponse = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      
+      if (!statusResponse.ok) {
+        if (statusResponse.status === 404) {
+          setError('Unable to process PDF for this analysis. The analysis result may not be available.')
+          return
+        }
+        throw new Error(`Status check failed: ${statusResponse.statusText}`)
+      }
+      
+      const statusData = await statusResponse.json()
+      
+      if (statusData.status === 'not_generated') {
+        // Generate PDF first
+        const generateResponse = await apiFetch(
+          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/generate-pdf`,
+          { method: 'POST' }
+        )
+        
+        if (!generateResponse.ok) {
+          throw new Error(`PDF generation failed: ${generateResponse.statusText}`)
+        }
+        
+        const generateData = await generateResponse.json()
+        
+        if (generateData.status === 'success' || generateData.status === 'already_exists') {
+          // Download the PDF
+          window.open(generateData.pdf_url, '_blank')
+          setPdfAvailable(true)
+        } else {
+          throw new Error('PDF generation did not succeed')
+        }
+      } else if (statusData.status === 'available') {
+        // PDF exists, download it
+        window.open(statusData.pdf_url, '_blank')
+      } else {
+        setError('PDF status could not be determined. Please try again.')
+      }
+    } catch (err) {
+      console.error('Error downloading PDF:', err)
+      setError(err.message || 'Failed to download PDF. Please try again.')
+    } finally {
+      setDownloadingPDF(false)
+    }
+  }
 
   const fetchDetail = async () => {
     setLoading(true)
@@ -149,11 +226,21 @@ export default function AnalysisDetail() {
         >
           Back to History
         </Button>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-          <Typography variant="h4">
-            Analysis Details
-          </Typography>
-          {getStatusChip(data.status)}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="h4">
+              Analysis Details
+            </Typography>
+            {getStatusChip(data.status)}
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={downloadingPDF ? <CircularProgress size={20} color="inherit" /> : (pdfAvailable ? <DownloadIcon /> : <PictureAsPdfIcon />)}
+            onClick={handleDownloadPDF}
+            disabled={downloadingPDF}
+          >
+            {downloadingPDF ? 'Processing...' : (pdfAvailable ? 'Download PDF' : 'Generate PDF')}
+          </Button>
         </Box>
         <Typography variant="body2" color="text.secondary">
           {data.blob_name}
