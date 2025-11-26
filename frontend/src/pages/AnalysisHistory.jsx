@@ -42,7 +42,7 @@ export default function AnalysisHistory() {
     setError(null)
     
     try {
-      const response = await fetch('/api/v1/analysis-history')
+      const response = await fetch(getApiUrl('api/v1/analysis-history'))
       
       if (!response.ok) {
         throw new Error(`Failed to fetch history: ${response.statusText}`)

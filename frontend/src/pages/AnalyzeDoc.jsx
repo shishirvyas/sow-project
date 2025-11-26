@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import MainLayout from '../layouts/MainLayout'
+import { getApiUrl } from '../config/api'
 import Typography from '@mui/material/Typography'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -55,7 +56,7 @@ export default function AnalyzeDoc() {
       const formData = new FormData()
       formData.append('file', selectedFile)
       
-      const response = await fetch('/api/v1/upload-sow', {
+      const response = await fetch(getApiUrl('api/v1/upload-sow'), {
         method: 'POST',
         body: formData,
       })
@@ -88,7 +89,7 @@ export default function AnalyzeDoc() {
     setError(null)
     
     try {
-      const response = await fetch(`/api/v1/process-sow/${encodeURIComponent(blobName)}`, {
+      const response = await fetch(getApiUrl(`api/v1/process-sow/${encodeURIComponent(blobName)}`), {
         method: 'POST',
       })
       
@@ -125,7 +126,7 @@ export default function AnalyzeDoc() {
   const fetchRecentAnalyses = async () => {
     setLoadingRecent(true)
     try {
-      const response = await fetch('/api/v1/analysis-history')
+      const response = await fetch(getApiUrl('api/v1/analysis-history'))
       if (response.ok) {
         const data = await response.json()
         // Get only the 5 most recent analyses

@@ -1,5 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getApiUrl } from '../config/api'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Avatar from '@mui/material/Avatar'
@@ -19,7 +20,7 @@ export default function Profile() {
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
-    fetch('/api/v1/profile')
+    fetch(getApiUrl('api/v1/profile'))
       .then(res => res.json())
       .then(data => {
         setProfile(data)
