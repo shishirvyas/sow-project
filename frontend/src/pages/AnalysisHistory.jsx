@@ -1,5 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../config/api'
 import MainLayout from '../layouts/MainLayout'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
