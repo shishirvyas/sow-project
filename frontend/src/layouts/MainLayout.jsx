@@ -105,31 +105,6 @@ export default function MainLayout({ children }) {
             </span>
           </Tooltip>
         </ListItem>
-        <ListItem disablePadding>
-          <Tooltip title="Products" placement="right" disableHoverListener={!isMdUp || !collapsed}>
-            <span>
-              <ListItemButton
-                component={RouterLink}
-                to="/products"
-                onClick={() => setMobileOpen(false)}
-                sx={{ justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', px: 2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center' }}>
-                  <ShoppingCartIcon />
-                </ListItemIcon>
-                <ListItemText
-                  sx={{
-                    opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 160ms ease, width 160ms ease',
-                    width: isMdUp && collapsed ? 0 : 'auto',
-                    overflow: 'hidden',
-                  }}
-                  primary="Products"
-                />
-              </ListItemButton>
-            </span>
-          </Tooltip>
-        </ListItem>
       </List>
       <Divider />
       
