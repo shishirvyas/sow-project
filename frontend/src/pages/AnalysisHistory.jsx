@@ -22,6 +22,9 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import WarningIcon from '@mui/icons-material/Warning'
 import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
+import DownloadIcon from '@mui/icons-material/Download'
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
 
 export default function AnalysisHistory() {
   const navigate = useNavigate()
@@ -33,10 +36,74 @@ export default function AnalysisHistory() {
   const [tabValue, setTabValue] = React.useState(0) // 0 = All, 1 = Success, 2 = Errors
   const [page, setPage] = React.useState(0)
   const [rowsPerPage, setRowsPerPage] = React.useState(10)
+  const [pdfGenerating, setPdfGenerating] = React.useState({})
+  const [pdfErrors, setPdfErrors] = React.useState({})
 
   React.useEffect(() => {
     fetchHistory()
   }, [])
+
+  const handleDownloadPDF = async (event, resultBlobName) => {
+    event.stopPropagation() // Prevent row click
+    
+    // Set generating state
+    setPdfGenerating(prev => ({ ...prev, [resultBlobName]: true }))
+    setPdfErrors(prev => ({ ...prev, [resultBlobName]: null }))
+    
+    try {
+      // First check if PDF exists
+      const statusResponse = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      
+      // Handle 404 or other errors
+      if (!statusResponse.ok) {
+        if (statusResponse.status === 404) {
+          // Analysis result not found - mark as error
+          setPdfErrors(prev => ({ ...prev, [resultBlobName]: 'Analysis not found' }))
+          return
+        }
+        throw new Error(`Status check failed: ${statusResponse.statusText}`)
+      }
+      
+      const statusData = await statusResponse.json()
+      
+      if (statusData.status === 'not_generated') {
+        // Generate PDF first
+        const generateResponse = await apiFetch(
+          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/generate-pdf`,
+          { method: 'POST' }
+        )
+        
+        if (!generateResponse.ok) {
+          throw new Error(`PDF generation failed: ${generateResponse.statusText}`)
+        }
+        
+        const generateData = await generateResponse.json()
+        
+        if (generateData.status === 'success' || generateData.status === 'already_exists') {
+          // Download the PDF
+          window.open(generateData.pdf_url, '_blank')
+          // Update history to reflect PDF is now available
+          setHistory(prev => prev.map(item => 
+            item.result_blob_name === resultBlobName 
+              ? { ...item, pdf_available: true, pdf_url: generateData.pdf_url }
+              : item
+          ))
+        } else {
+          throw new Error('PDF generation did not succeed')
+        }
+      } else if (statusData.status === 'available') {
+        // PDF exists, download it
+        window.open(statusData.pdf_url, '_blank')
+      } else {
+        setPdfErrors(prev => ({ ...prev, [resultBlobName]: 'PDF status unknown' }))
+      }
+    } catch (err) {
+      console.error('Error downloading PDF:', err)
+      setPdfErrors(prev => ({ ...prev, [resultBlobName]: err.message || 'Failed to process PDF' }))
+    } finally {
+      setPdfGenerating(prev => ({ ...prev, [resultBlobName]: false }))
+    }
+  }
 
   const fetchHistory = async () => {
     setLoading(true)
@@ -128,9 +195,51 @@ export default function AnalysisHistory() {
       const startDate = new Date(start)
       const endDate = new Date(end)
       const seconds = Math.round((endDate - startDate) / 1000)
-      return `${seconds}s`
+      return `${seconds} seconds`
     } catch {
       return 'N/A'
+    }
+  }
+
+  const getPDFIconAndTooltip = (item) => {
+    const resultBlobName = item.result_blob_name
+    
+    // Check if there's an error
+    if (pdfErrors[resultBlobName]) {
+      return {
+        icon: <ErrorIcon sx={{ color: 'error.main' }} />,
+        tooltip: `PDF Error: ${pdfErrors[resultBlobName]}`,
+        color: 'error',
+        disabled: true
+      }
+    }
+    
+    // Check if generating
+    if (pdfGenerating[resultBlobName]) {
+      return {
+        icon: <CircularProgress size={20} />,
+        tooltip: 'Generating PDF...',
+        color: 'primary',
+        disabled: true
+      }
+    }
+    
+    // Check if available
+    if (item.pdf_available) {
+      return {
+        icon: <DownloadIcon />,
+        tooltip: 'Download PDF Report',
+        color: 'success',
+        disabled: false
+      }
+    }
+    
+    // Not generated yet
+    return {
+      icon: <PictureAsPdfIcon />,
+      tooltip: 'Generate PDF Report',
+      color: 'primary',
+      disabled: false
     }
   }
 
@@ -204,6 +313,7 @@ export default function AnalysisHistory() {
                       <TableCell align="right">Errors</TableCell>
                       <TableCell>Started</TableCell>
                       <TableCell>Duration</TableCell>
+                      <TableCell align="center">PDF</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -258,6 +368,25 @@ export default function AnalysisHistory() {
                             <Typography variant="body2">
                               {formatDuration(item.processing_started_at, item.processing_completed_at)}
                             </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            {(() => {
+                              const pdfStatus = getPDFIconAndTooltip(item)
+                              return (
+                                <Tooltip title={pdfStatus.tooltip}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      color={pdfStatus.color}
+                                      onClick={(e) => handleDownloadPDF(e, item.result_blob_name)}
+                                      disabled={pdfStatus.disabled}
+                                    >
+                                      {pdfStatus.icon}
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              )
+                            })()}
                           </TableCell>
                         </TableRow>
                       </Tooltip>

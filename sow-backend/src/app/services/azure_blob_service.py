@@ -302,3 +302,93 @@ class AzureBlobService:
         except Exception as e:
             logging.error(f"Error storing analysis result: {e}")
             raise
+    
+    def store_analysis_pdf(self, result_blob_name: str, pdf_buffer) -> dict:
+        """
+        Store analysis PDF in Azure Blob Storage
+        
+        Args:
+            result_blob_name: Original result JSON blob name
+            pdf_buffer: BytesIO buffer containing PDF data
+            
+        Returns:
+            dict with pdf_blob_name, url, size
+        """
+        try:
+            pdfs_container = "sow-analysis-pdfs"
+            
+            # Ensure PDFs container exists
+            container_client = self.blob_service_client.get_container_client(pdfs_container)
+            if not container_client.exists():
+                container_client.create_container()
+                logging.info(f"Created container: {pdfs_container}")
+            
+            # Generate PDF blob name based on result blob name
+            base_name = result_blob_name.replace('.json', '')
+            pdf_blob_name = f"{base_name}.pdf"
+            
+            # Get PDF bytes
+            pdf_bytes = pdf_buffer.getvalue()
+            
+            # Upload to PDFs container
+            blob_client = self.blob_service_client.get_blob_client(
+                container=pdfs_container,
+                blob=pdf_blob_name
+            )
+            
+            blob_client.upload_blob(
+                pdf_bytes,
+                overwrite=True,
+                content_settings=ContentSettings(
+                    content_type="application/pdf",
+                    content_disposition=f"attachment; filename={pdf_blob_name}"
+                ),
+                metadata={
+                    "source_result_blob": result_blob_name,
+                    "generated_timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            logging.info(f"Stored analysis PDF: {pdf_blob_name} ({len(pdf_bytes)} bytes)")
+            
+            return {
+                "pdf_blob_name": pdf_blob_name,
+                "url": blob_client.url,
+                "size": len(pdf_bytes),
+                "container": pdfs_container,
+                "source_result_blob": result_blob_name
+            }
+            
+        except Exception as e:
+            logging.error(f"Error storing analysis PDF: {e}")
+            raise
+    
+    def get_analysis_pdf_url(self, result_blob_name: str) -> Optional[str]:
+        """
+        Get download URL for analysis PDF
+        
+        Args:
+            result_blob_name: Result JSON blob name
+            
+        Returns:
+            PDF download URL or None if not found
+        """
+        try:
+            pdfs_container = "sow-analysis-pdfs"
+            base_name = result_blob_name.replace('.json', '')
+            pdf_blob_name = f"{base_name}.pdf"
+            
+            blob_client = self.blob_service_client.get_blob_client(
+                container=pdfs_container,
+                blob=pdf_blob_name
+            )
+            
+            # Check if PDF exists
+            if blob_client.exists():
+                return blob_client.url
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting PDF URL: {e}")
+            return None
