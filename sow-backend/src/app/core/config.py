@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     # Ollama Configuration
     OLLAMA_BASE_URL: Optional[str] = None
     OLLAMA_MODEL: Optional[str] = None
+    
+    # CORS Configuration
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_METHODS: str = "*"
+    CORS_ALLOW_HEADERS: str = "*"
 
     # pydantic v2 / pydantic-settings uses `model_config` for settings
     model_config = {"env_file": ".env", "extra": "ignore"}

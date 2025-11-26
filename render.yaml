@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: sow-backend-service
+    env: python
+    plan: free
+    rootDir: sow-backend
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "gunicorn src.app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: ENV
+        value: "production"
+      - key: CALL_LLM
+        value: "true"
+      - key: LLM_PROVIDER
+        sync: false  # Set this in Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: GROQ_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: AZURE_STORAGE_CONNECTION_STRING
+        sync: false  # Set this in Render dashboard
+      - key: CORS_ORIGINS
+        value: "https://your-frontend-app.vercel.app"  # Update with your frontend URL
