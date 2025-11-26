@@ -46,12 +46,15 @@ export default function AnalysisHistory() {
   const handleDownloadPDF = async (event, resultBlobName) => {
     event.stopPropagation() // Prevent row click
     
+    console.log(`[PDF DOWNLOAD] Starting download for: ${resultBlobName}`)
+    
     // Set generating state
     setPdfGenerating(prev => ({ ...prev, [resultBlobName]: true }))
     setPdfErrors(prev => ({ ...prev, [resultBlobName]: null }))
     
     try {
       // First check if PDF exists
+      console.log(`[PDF DOWNLOAD] Checking PDF status...`)
       const statusResponse = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
       
       // Handle 404 or other errors
@@ -65,9 +68,11 @@ export default function AnalysisHistory() {
       }
       
       const statusData = await statusResponse.json()
+      console.log(`[PDF DOWNLOAD] Status response:`, statusData)
       
       if (statusData.status === 'not_generated') {
         // Generate PDF first
+        console.log(`[PDF DOWNLOAD] PDF not generated, generating now...`)
         const generateResponse = await apiFetch(
           `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/generate-pdf`,
           { method: 'POST' }
@@ -80,8 +85,32 @@ export default function AnalysisHistory() {
         const generateData = await generateResponse.json()
         
         if (generateData.status === 'success' || generateData.status === 'already_exists') {
-          // Download the PDF
-          window.open(generateData.pdf_url, '_blank')
+          console.log(`[PDF DOWNLOAD] PDF generated successfully, downloading...`)
+          // Download the PDF via API endpoint
+          const downloadResponse = await apiFetch(
+            `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+          )
+          
+          console.log(`[PDF DOWNLOAD] Download response status: ${downloadResponse.status}`)
+          console.log(`[PDF DOWNLOAD] Download response content-type: ${downloadResponse.headers.get('content-type')}`)
+          
+          if (!downloadResponse.ok) {
+            throw new Error(`PDF download failed: ${downloadResponse.statusText}`)
+          }
+          
+          // Get the PDF blob and trigger download
+          console.log(`[PDF DOWNLOAD] Reading response as blob...`)
+          const blob = await downloadResponse.blob()
+          console.log(`[PDF DOWNLOAD] Blob size: ${blob.size} bytes, type: ${blob.type}`)
+          const url = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${resultBlobName.replace('.json', '')}.pdf`
+          document.body.appendChild(a)
+          a.click()
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(a)
+          
           // Update history to reflect PDF is now available
           setHistory(prev => prev.map(item => 
             item.result_blob_name === resultBlobName 
@@ -92,14 +121,41 @@ export default function AnalysisHistory() {
           throw new Error('PDF generation did not succeed')
         }
       } else if (statusData.status === 'available') {
-        // PDF exists, download it
-        window.open(statusData.pdf_url, '_blank')
+        console.log(`[PDF DOWNLOAD] PDF already available, downloading directly...`)
+        // PDF exists, download it via API endpoint
+        const downloadResponse = await apiFetch(
+          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+        )
+        
+        console.log(`[PDF DOWNLOAD] Download response status: ${downloadResponse.status}`)
+        console.log(`[PDF DOWNLOAD] Download response content-type: ${downloadResponse.headers.get('content-type')}`)
+        
+        if (!downloadResponse.ok) {
+          throw new Error(`PDF download failed: ${downloadResponse.statusText}`)
+        }
+        
+        // Get the PDF blob and trigger download
+        console.log(`[PDF DOWNLOAD] Reading response as blob...`)
+        const blob = await downloadResponse.blob()
+        console.log(`[PDF DOWNLOAD] Blob size: ${blob.size} bytes, type: ${blob.type}`)
+        console.log(`[PDF DOWNLOAD] Creating download link...`)
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${resultBlobName.replace('.json', '')}.pdf`
+        document.body.appendChild(a)
+        console.log(`[PDF DOWNLOAD] Triggering download for: ${a.download}`)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        console.log(`[PDF DOWNLOAD] Download completed successfully`)
       } else {
+        console.warn(`[PDF DOWNLOAD] Unknown PDF status: ${statusData.status}`)
         setPdfErrors(prev => ({ ...prev, [resultBlobName]: 'PDF status unknown' }))
       }
     } catch (err) {
-      console.error('Error downloading PDF:', err)
-      setPdfErrors(prev => ({ ...prev, [resultBlobName]: err.message || 'Failed to process PDF' }))
+      console.error('[PDF DOWNLOAD] Error:', err)
+      setPdfErrors(prev => ({ ...prev, [resultBlobName]: err.message || 'Download failed' }))
     } finally {
       setPdfGenerating(prev => ({ ...prev, [resultBlobName]: false }))
     }
@@ -146,7 +202,7 @@ export default function AnalysisHistory() {
       return (
         <Chip
           icon={<CheckCircleIcon />}
-          label="Success"
+          label="S"
           color="success"
           size="small"
         />
@@ -155,7 +211,7 @@ export default function AnalysisHistory() {
       return (
         <Chip
           icon={<WarningIcon />}
-          label="Partial Success"
+          label="PS"
           color="warning"
           size="small"
         />
@@ -164,7 +220,7 @@ export default function AnalysisHistory() {
       return (
         <Chip
           icon={<ErrorIcon />}
-          label="Failed"
+          label="F"
           color="error"
           size="small"
         />
@@ -172,7 +228,7 @@ export default function AnalysisHistory() {
     } else {
       return (
         <Chip
-          label={status}
+          label={status.substring(0, 2).toUpperCase()}
           size="small"
         />
       )
@@ -309,88 +365,110 @@ export default function AnalysisHistory() {
                     <TableRow>
                       <TableCell>Document</TableCell>
                       <TableCell>Status</TableCell>
-                      <TableCell align="right">Prompts</TableCell>
-                      <TableCell align="right">Errors</TableCell>
-                      <TableCell>Started</TableCell>
-                      <TableCell>Duration</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }} align="right">Prompts</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }} align="right">Errors</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Started</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Duration</TableCell>
                       <TableCell align="center">PDF</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {paginatedHistory.map((item, index) => (
-                      <Tooltip
-                        key={item.result_blob_name || index}
-                        title="Click to view details"
-                        placement="left"
-                      >
-                        <TableRow
-                          hover
-                          onClick={() => navigate(`/analysis-history/${encodeURIComponent(item.result_blob_name)}`)}
-                          sx={{
-                            cursor: 'pointer',
-                            '&:hover': {
-                              bgcolor: 'action.hover',
-                            }
-                          }}
+                    {paginatedHistory.map((item, index) => {
+                      // Truncate filename for mobile
+                      const truncateFilename = (name, maxLength = 30) => {
+                        if (name.length <= maxLength) return name
+                        return name.substring(0, maxLength) + '...'
+                      }
+
+                      return (
+                        <Tooltip
+                          key={item.result_blob_name || index}
+                          title="Click to view details"
+                          placement="left"
                         >
-                          <TableCell>
-                            <Typography variant="body2" fontWeight={600}>
-                              {item.source_blob}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {item.result_blob_name}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            {getStatusChip(item.status, item.has_errors)}
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.prompts_processed || 0}
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.error_count > 0 ? (
-                              <Chip
-                                label={item.error_count}
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                              />
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">
-                              {formatDate(item.processing_started_at || item.created)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">
-                              {formatDuration(item.processing_started_at, item.processing_completed_at)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            {(() => {
-                              const pdfStatus = getPDFIconAndTooltip(item)
-                              return (
-                                <Tooltip title={pdfStatus.tooltip}>
-                                  <span>
-                                    <IconButton
-                                      size="small"
-                                      color={pdfStatus.color}
-                                      onClick={(e) => handleDownloadPDF(e, item.result_blob_name)}
-                                      disabled={pdfStatus.disabled}
-                                    >
-                                      {pdfStatus.icon}
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                              )
-                            })()}
-                          </TableCell>
-                        </TableRow>
-                      </Tooltip>
-                    ))}
+                          <TableRow
+                            hover
+                            onClick={() => navigate(`/analysis-history/${encodeURIComponent(item.result_blob_name)}`)}
+                            sx={{
+                              cursor: 'pointer',
+                              '&:hover': {
+                                bgcolor: 'action.hover',
+                              }
+                            }}
+                          >
+                            <TableCell>
+                              <Typography 
+                                variant="body2" 
+                                fontWeight={600}
+                                sx={{
+                                  display: { xs: 'block', sm: 'block' },
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: { xs: 'nowrap', sm: 'normal' },
+                                  maxWidth: { xs: '150px', sm: '250px', md: 'none' }
+                                }}
+                              >
+                                {truncateFilename(item.source_blob, 50)}
+                              </Typography>
+                              <Typography 
+                                variant="caption" 
+                                color="text.secondary"
+                                sx={{ display: { xs: 'none', sm: 'block' } }}
+                              >
+                                {truncateFilename(item.result_blob_name, 40)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              {getStatusChip(item.status, item.has_errors)}
+                            </TableCell>
+                            <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }} align="right">
+                              {item.prompts_processed || 0}
+                            </TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }} align="right">
+                              {item.error_count > 0 ? (
+                                <Chip
+                                  label={item.error_count}
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                />
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                            <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                              <Typography variant="body2">
+                                {formatDate(item.processing_started_at || item.created)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                              <Typography variant="body2">
+                                {formatDuration(item.processing_started_at, item.processing_completed_at)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              {(() => {
+                                const pdfStatus = getPDFIconAndTooltip(item)
+                                return (
+                                  <Tooltip title={pdfStatus.tooltip}>
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        color={pdfStatus.color}
+                                        onClick={(e) => handleDownloadPDF(e, item.result_blob_name)}
+                                        disabled={pdfStatus.disabled}
+                                      >
+                                        {pdfStatus.icon}
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                )
+                              })()}
+                            </TableCell>
+                          </TableRow>
+                        </Tooltip>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>

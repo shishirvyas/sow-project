@@ -89,15 +89,50 @@ export default function AnalysisDetail() {
         const generateData = await generateResponse.json()
         
         if (generateData.status === 'success' || generateData.status === 'already_exists') {
-          // Download the PDF
-          window.open(generateData.pdf_url, '_blank')
+          // Download the PDF via API endpoint
+          const downloadResponse = await apiFetch(
+            `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+          )
+          
+          if (!downloadResponse.ok) {
+            throw new Error(`PDF download failed: ${downloadResponse.statusText}`)
+          }
+          
+          // Get the PDF blob and trigger download
+          const blob = await downloadResponse.blob()
+          const url = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${resultBlobName.replace('.json', '')}.pdf`
+          document.body.appendChild(a)
+          a.click()
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(a)
+          
           setPdfAvailable(true)
         } else {
           throw new Error('PDF generation did not succeed')
         }
       } else if (statusData.status === 'available') {
-        // PDF exists, download it
-        window.open(statusData.pdf_url, '_blank')
+        // PDF exists, download it via API endpoint
+        const downloadResponse = await apiFetch(
+          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+        )
+        
+        if (!downloadResponse.ok) {
+          throw new Error(`PDF download failed: ${downloadResponse.statusText}`)
+        }
+        
+        // Get the PDF blob and trigger download
+        const blob = await downloadResponse.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${resultBlobName.replace('.json', '')}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
       } else {
         setError('PDF status could not be determined. Please try again.')
       }

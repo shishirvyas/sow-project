@@ -363,9 +363,35 @@ class AzureBlobService:
             logging.error(f"Error storing analysis PDF: {e}")
             raise
     
+    def pdf_exists(self, result_blob_name: str) -> bool:
+        """
+        Check if PDF exists for analysis result
+        
+        Args:
+            result_blob_name: Result JSON blob name
+            
+        Returns:
+            True if PDF exists, False otherwise
+        """
+        try:
+            pdfs_container = "sow-analysis-pdfs"
+            base_name = result_blob_name.replace('.json', '')
+            pdf_blob_name = f"{base_name}.pdf"
+            
+            blob_client = self.blob_service_client.get_blob_client(
+                container=pdfs_container,
+                blob=pdf_blob_name
+            )
+            
+            return blob_client.exists()
+            
+        except Exception as e:
+            logging.error(f"Error checking PDF existence: {e}")
+            return False
+    
     def get_analysis_pdf_url(self, result_blob_name: str) -> Optional[str]:
         """
-        Get download URL for analysis PDF
+        Get download URL for analysis PDF (kept for backward compatibility)
         
         Args:
             result_blob_name: Result JSON blob name

@@ -92,7 +92,26 @@ export const apiFetch = async (endpoint, options = {}) => {
   try {
     const response = await fetch(url, options)
     
-    // Clone response to read body without consuming it
+    // Check if response is binary (PDF, images, etc.)
+    const contentType = response.headers.get('content-type') || ''
+    const isBinary = contentType.includes('application/pdf') || 
+                     contentType.includes('application/octet-stream') ||
+                     contentType.includes('image/')
+    
+    if (isBinary) {
+      // For binary responses, just log without reading body
+      console.group(`✅ API Response: ${method} ${url}`)
+      console.log(`⏰ Timestamp: ${new Date().toISOString()}`)
+      console.log(`📍 Full URL: ${url}`)
+      console.log(`⏱️ Total Duration: ${Date.now() - startTime}ms`)
+      console.log(`📊 Status: ${response.status} ${response.statusText}`)
+      console.log(`📥 Response: [Binary Data] ${contentType}`)
+      console.groupEnd()
+      
+      return response
+    }
+    
+    // Clone response to read body without consuming it (for non-binary)
     const clonedResponse = response.clone()
     let data
     
