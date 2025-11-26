@@ -36,18 +36,18 @@ logging.basicConfig(
 
 app = FastAPI(title="My Python Service")
 
-# Configure CORS for frontend access
+# Configure CORS for frontend access from environment variables
+# You can set CORS_ORIGINS in .env file as comma-separated values
+# Example: CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://your-app.com
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+logging.info(f"Configuring CORS with origins: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Frontend dev server
-        "http://localhost:5173",  # Vite dev server
-        # Add your production frontend URL here when deployed
-        # "https://your-app.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=[settings.CORS_ALLOW_METHODS] if settings.CORS_ALLOW_METHODS != "*" else ["*"],
+    allow_headers=[settings.CORS_ALLOW_HEADERS] if settings.CORS_ALLOW_HEADERS != "*" else ["*"],
 )
 
 app.include_router(v1_router, prefix="/api/v1")
