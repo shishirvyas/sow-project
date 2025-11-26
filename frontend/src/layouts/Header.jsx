@@ -21,20 +21,63 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
   return (
     <AppBar position="sticky" color="inherit" elevation={1} sx={{ mb: 3 }}>
       <Toolbar sx={{ maxWidth: 1280, mx: 'auto', width: '100%' }}>
+        {/* Mobile menu icon - left side */}
+        <IconButton 
+          edge="start" 
+          sx={{ display: { md: 'none' }, mr: 2 }} 
+          aria-label="menu" 
+          onClick={onToggleDrawer}
+        >
+          <MenuIcon />
+        </IconButton>
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AccountPopover />
+          <Box
+            component={RouterLink}
+            to="/"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 40,
+              height: 40,
+              borderRadius: '8px',
+              bgcolor: 'primary.main',
+              color: 'white',
+              textDecoration: 'none',
+              fontWeight: 700,
+              fontSize: '1.2rem',
+              transition: 'all 200ms ease',
+              '&:hover': {
+                transform: 'scale(1.05)',
+                boxShadow: 2,
+              },
+            }}
+          >
+            S
+          </Box>
 
           <Typography
             variant="h6"
             component={RouterLink}
             to="/"
-            sx={{ textDecoration: 'none', color: 'text.primary', fontWeight: 600 }}
+            sx={{ 
+              textDecoration: 'none', 
+              color: 'text.primary', 
+              fontWeight: 700,
+              letterSpacing: '0.5px'
+            }}
           >
             SKOPE
           </Typography>
         </Box>
 
         <Box sx={{ flex: 1 }} />
+
+        {/* Desktop account popover */}
+        <Box sx={{ display: { xs: 'none', md: 'block' }, mr: 2 }}>
+          <AccountPopover />
+        </Box>
 
         {/* Desktop collapse toggle */}
         <Tooltip
@@ -79,9 +122,10 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
           </Button>
         </Box>
 
-        <IconButton edge="end" sx={{ display: { md: 'none' } }} aria-label="menu" onClick={onToggleDrawer}>
-          <MenuIcon />
-        </IconButton>
+        {/* Mobile account popover - right side */}
+        <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+          <AccountPopover />
+        </Box>
       </Toolbar>
     </AppBar>
   )
