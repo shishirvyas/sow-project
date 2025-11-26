@@ -11,6 +11,16 @@ import ListItemText from '@mui/material/ListItemText'
 import Divider from '@mui/material/Divider'
 import { useNavigate } from 'react-router-dom'
 
+// Helper to generate initials from name
+function getInitials(name) {
+  if (!name) return '?'
+  const parts = name.trim().split(' ')
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }
+  return parts[0].substring(0, 2).toUpperCase()
+}
+
 export default function AccountPopover() {
   const [anchorEl, setAnchorEl] = React.useState(null)
   const [profile, setProfile] = React.useState(null)
@@ -43,7 +53,7 @@ export default function AccountPopover() {
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
       >
-        {profile?.initials || 'JD'}
+        {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
       </Avatar>
 
       <Popover
@@ -57,7 +67,9 @@ export default function AccountPopover() {
       >
         <Box sx={{ p: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1 }}>
-            <Avatar sx={{ bgcolor: 'primary.main' }}>{profile?.initials || 'JD'}</Avatar>
+            <Avatar sx={{ bgcolor: 'primary.main' }}>
+              {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+            </Avatar>
             <Box>
               <Typography variant="subtitle1">{profile?.name || 'Loading...'}</Typography>
               <Typography variant="body2" color="text.secondary">{profile?.role || ''}</Typography>

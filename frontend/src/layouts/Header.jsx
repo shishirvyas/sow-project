@@ -106,9 +106,6 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
           <Button component={RouterLink} to="/dashboard" color="primary" variant="text">
             Dashboard
           </Button>
-          <Button component={RouterLink} to="/products" color="primary" variant="text">
-            Products
-          </Button>
           <NotificationsPopover />
           
           <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
