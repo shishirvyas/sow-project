@@ -198,13 +198,20 @@ export default function AnalyzeDoc() {
               </Stepper>
 
               {/* Workflow Steps as Circular Buttons */}
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, py: 4 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: { xs: 'column', md: 'row' },
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                gap: { xs: 3, md: 4 }, 
+                py: 4 
+              }}>
                 {/* Step 1: Select File */}
                 <Box sx={{ textAlign: 'center' }}>
                   <Box
                     sx={{
-                      width: 120,
-                      height: 120,
+                      width: { xs: 100, md: 120 },
+                      height: { xs: 100, md: 120 },
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
@@ -246,20 +253,24 @@ export default function AnalyzeDoc() {
                     Select File
                   </Typography>
                   {selectedFile && (
-                    <Typography variant="caption" color="text.secondary" display="block">
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ wordBreak: 'break-word', maxWidth: { xs: 200, md: 300 } }}>
                       {selectedFile.name}
                     </Typography>
                   )}
                 </Box>
 
-                <Box sx={{ fontSize: 32, color: 'text.secondary' }}>→</Box>
+                <Box sx={{ 
+                  fontSize: { xs: 24, md: 32 }, 
+                  color: 'text.secondary',
+                  transform: { xs: 'rotate(90deg)', md: 'none' }
+                }}>→</Box>
 
                 {/* Step 2: Upload */}
                 <Box sx={{ textAlign: 'center' }}>
                   <Box
                     sx={{
-                      width: 120,
-                      height: 120,
+                      width: { xs: 100, md: 120 },
+                      height: { xs: 100, md: 120 },
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
@@ -283,7 +294,7 @@ export default function AnalyzeDoc() {
                     ) : activeStep > 1 ? (
                       <CheckCircleIcon sx={{ fontSize: 48 }} />
                     ) : (
-                      <CloudUploadIcon sx={{ fontSize: 48 }} />
+                      <CloudUploadIcon sx={{ fontSize: { xs: 40, md: 48 } }} />
                     )}
                   </Box>
                   <Typography variant="subtitle1" fontWeight={600}>
@@ -296,14 +307,18 @@ export default function AnalyzeDoc() {
                   )}
                 </Box>
 
-                <Box sx={{ fontSize: 32, color: 'text.secondary' }}>→</Box>
+                <Box sx={{ 
+                  fontSize: { xs: 24, md: 32 }, 
+                  color: 'text.secondary',
+                  transform: { xs: 'rotate(90deg)', md: 'none' }
+                }}>→</Box>
 
                 {/* Step 3: Analyze */}
                 <Box sx={{ textAlign: 'center' }}>
                   <Box
                     sx={{
-                      width: 120,
-                      height: 120,
+                      width: { xs: 100, md: 120 },
+                      height: { xs: 100, md: 120 },
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
@@ -323,11 +338,11 @@ export default function AnalyzeDoc() {
                     onClick={activeStep === 2 ? handleAnalyze : undefined}
                   >
                     {analyzing ? (
-                      <CircularProgress size={48} sx={{ color: 'white' }} />
+                      <CircularProgress size={{ xs: 40, md: 48 }} sx={{ color: 'white' }} />
                     ) : activeStep > 2 ? (
-                      <CheckCircleIcon sx={{ fontSize: 48 }} />
+                      <CheckCircleIcon sx={{ fontSize: { xs: 40, md: 48 } }} />
                     ) : (
-                      <PlayArrowIcon sx={{ fontSize: 48 }} />
+                      <PlayArrowIcon sx={{ fontSize: { xs: 40, md: 48 } }} />
                     )}
                   </Box>
                   <Typography variant="subtitle1" fontWeight={600}>
