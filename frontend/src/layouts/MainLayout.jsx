@@ -27,9 +27,59 @@ import ListItemAvatar from '@mui/material/ListItemAvatar'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import NotificationsIcon from '@mui/icons-material/Notifications'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import WarningIcon from '@mui/icons-material/Warning'
+import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 
 const drawerWidth = 240
 const collapsedWidth = 72
+
+// Helper to generate initials from name
+function getInitials(name) {
+  if (!name) return '?'
+  const parts = name.trim().split(' ')
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }
+  return parts[0].substring(0, 2).toUpperCase()
+}
+
+// Helper to check if a date is today
+function isToday(dateString) {
+  if (!dateString) return false
+  const date = new Date(dateString)
+  const today = new Date()
+  return date.getDate() === today.getDate() &&
+         date.getMonth() === today.getMonth() &&
+         date.getFullYear() === today.getFullYear()
+}
+
+// Helper to format time ago
+function getTimeAgo(dateString) {
+  if (!dateString) return 'Recently'
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  
+  return 'Today'
+}
+
+// Helper to extract document name from blob path
+function formatDocName(blobName) {
+  if (!blobName || blobName === 'unknown') return 'Unknown Document'
+  const parts = blobName.split('/')
+  const fileName = parts[parts.length - 1]
+  // Truncate if too long
+  return fileName.length > 30 ? fileName.substring(0, 27) + '...' : fileName
+}
 
 export default function MainLayout({ children }) {
   const navigate = useNavigate()
@@ -46,6 +96,8 @@ export default function MainLayout({ children }) {
   })
   const [profile, setProfile] = useState(null)
   const [profileCardOpen, setProfileCardOpen] = useState(true)
+  const [todaysAnalyses, setTodaysAnalyses] = useState([])
+  const [loadingAnalyses, setLoadingAnalyses] = useState(false)
 
   // Fetch profile data
   useEffect(() => {
@@ -54,6 +106,37 @@ export default function MainLayout({ children }) {
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))
   }, [])
+
+  // Fetch today's completed analyses
+  const fetchTodaysAnalyses = React.useCallback(async () => {
+    setLoadingAnalyses(true)
+    try {
+      const response = await apiFetch('api/v1/analysis-history')
+      const { history } = response
+      
+      // Filter for today's completed analyses
+      const todaysCompleted = history.filter(item => {
+        const isCompletedToday = isToday(item.processing_completed_at) || isToday(item.created)
+        const isCompleted = ['success', 'partial_success'].includes(item.status)
+        return isCompletedToday && isCompleted
+      })
+      
+      // Take only the 3 most recent
+      setTodaysAnalyses(todaysCompleted.slice(0, 3))
+    } catch (error) {
+      console.error('Error fetching today\'s analyses:', error)
+      setTodaysAnalyses([])
+    } finally {
+      setLoadingAnalyses(false)
+    }
+  }, [])
+
+  // Fetch on mount and refresh every 30 seconds
+  useEffect(() => {
+    fetchTodaysAnalyses()
+    const interval = setInterval(fetchTodaysAnalyses, 30000)
+    return () => clearInterval(interval)
+  }, [fetchTodaysAnalyses])
 
   // Persist collapsed state and reset on small screens
   useEffect(() => {
@@ -262,7 +345,9 @@ export default function MainLayout({ children }) {
               </IconButton>
               <ListItem>
                 <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: 'primary.main' }}>{profile?.initials || 'JD'}</Avatar>
+                  <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+                  </Avatar>
                 </ListItemAvatar>
                 <ListItemText 
                   primary={profile?.name || 'Loading...'} 
@@ -278,22 +363,94 @@ export default function MainLayout({ children }) {
             </Paper>
           )}
 
-          <Paper sx={{ p: 1 }} elevation={0}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <NotificationsIcon color="action" sx={{ mr: 1 }} />
-              <ListItemText primary="Notifications" />
+          <Paper sx={{ p: 1.5 }} elevation={0}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <NotificationsIcon color="action" sx={{ mr: 1 }} />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  Today's Completed
+                </Typography>
+              </Box>
+              {todaysAnalyses.length > 0 && (
+                <Chip 
+                  label={todaysAnalyses.length} 
+                  size="small" 
+                  color="primary"
+                  sx={{ height: 20, minWidth: 20 }}
+                />
+              )}
             </Box>
-            <List dense>
-              <ListItem>
-                <ListItemText primary="New comment on report" secondary="2h ago" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Order #1234 shipped" secondary="1d ago" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Password changed" secondary="3d ago" />
-              </ListItem>
-            </List>
+            {loadingAnalyses ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : todaysAnalyses.length === 0 ? (
+              <Box sx={{ py: 2, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary" fontSize="0.8rem">
+                  No analyses completed today
+                </Typography>
+              </Box>
+            ) : (
+              <List dense sx={{ py: 0 }}>
+                {todaysAnalyses.map((analysis) => (
+                  <ListItem
+                    key={analysis.result_blob_name}
+                    button
+                    onClick={() => navigate(`/analysis-history/${encodeURIComponent(analysis.result_blob_name)}`)}
+                    sx={{
+                      borderRadius: 1,
+                      mb: 0.5,
+                      '&:hover': {
+                        bgcolor: 'action.hover'
+                      }
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                      {analysis.status === 'success' ? (
+                        <CheckCircleIcon fontSize="small" color="success" />
+                      ) : (
+                        <WarningIcon fontSize="small" color="warning" />
+                      )}
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary={
+                        <Typography variant="body2" fontSize="0.85rem" noWrap>
+                          {formatDocName(analysis.source_blob)}
+                        </Typography>
+                      }
+                      secondary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
+                          <Typography variant="caption" fontSize="0.7rem" color="text.secondary">
+                            {getTimeAgo(analysis.processing_completed_at || analysis.created)}
+                          </Typography>
+                          {analysis.error_count > 0 && (
+                            <Chip 
+                              label={`${analysis.error_count} err`}
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              sx={{ height: 16, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }}
+                            />
+                          )}
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+            {todaysAnalyses.length > 0 && (
+              <Box sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
+                <Button 
+                  size="small" 
+                  fullWidth 
+                  onClick={() => navigate('/analysis-history')}
+                  sx={{ fontSize: '0.75rem' }}
+                >
+                  View All History
+                </Button>
+              </Box>
+            )}
           </Paper>
         </Box>
       </Box>

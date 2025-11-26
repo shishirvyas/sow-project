@@ -53,7 +53,9 @@ export default function Profile() {
 
       <Paper sx={{ p: 3, mb: 3 }} elevation={1}>
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', mb: 3 }}>
-          <Avatar sx={{ width: 96, height: 96, bgcolor: 'primary.main', mb: 2 }}>{profile?.initials || 'JD'}</Avatar>
+          <Avatar sx={{ width: 96, height: 96, bgcolor: 'primary.main', mb: 2 }}>
+            {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+          </Avatar>
           <Typography variant="h4" gutterBottom>{profile?.name || 'Loading...'}</Typography>
           <Typography variant="body1" color="text.secondary">{profile?.role} — {profile?.department}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
