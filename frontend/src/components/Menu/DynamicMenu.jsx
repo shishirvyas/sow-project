@@ -16,6 +16,9 @@ import {
   People as PeopleIcon,
   Settings as SettingsIcon,
   AccountCircle as ProfileIcon,
+  AdminPanelSettings as RolesIcon,
+  Article as AuditIcon,
+  BarChart as ChartIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,6 +29,13 @@ const iconMap = {
   'analysis-history': HistoryIcon,
   prompts: PromptsIcon,
   users: PeopleIcon,
+  'user-management': PeopleIcon,
+  roles: RolesIcon,
+  'admin-roles': RolesIcon,
+  'audit-logs': AuditIcon,
+  'admin-audit': AuditIcon,
+  'permissions-graph': ChartIcon,
+  'chart-bar': ChartIcon,
   settings: SettingsIcon,
   profile: ProfileIcon,
 };

@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr
 from src.app.api.v1.auth import get_current_user
 from src.app.services.auth_service import get_user_permissions
 from src.app.services import admin_service
+from src.app.core.errors import get_error_response
 
 
 router = APIRouter()
@@ -57,16 +58,17 @@ def get_users(
     user_id: int = Depends(get_current_user)
 ):
     """
-    Get all users.
+    Get all users with their roles.
     
     Requires: user.view permission
     """
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'user.view' not in permissions:
+        error = get_error_response("USR-111")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: user.view required"
+            detail=error
         )
     
     users = admin_service.get_all_users(include_deleted=include_deleted)
@@ -311,9 +313,10 @@ def get_roles(user_id: int = Depends(get_current_user)):
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.view' not in permissions:
+        error = get_error_response("USR-112")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.view required"
+            detail=error
         )
     
     roles = admin_service.get_all_roles()
@@ -362,9 +365,10 @@ def create_role(
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.create' not in permissions:
+        error = get_error_response("USR-112", "You need role.create permission")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.create required"
+            detail=error
         )
     
     try:
@@ -410,9 +414,10 @@ def update_role(
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.edit' not in permissions:
+        error = get_error_response("USR-112", "You need role.edit permission")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.edit required"
+            detail=error
         )
     
     try:
@@ -461,9 +466,10 @@ def delete_role(
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.delete' not in permissions:
+        error = get_error_response("USR-112", "You need role.delete permission")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.delete required"
+            detail=error
         )
     
     try:
@@ -503,9 +509,10 @@ def assign_role_permissions(
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.edit' not in permissions:
+        error = get_error_response("USR-112", "You need role.edit permission")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.edit required"
+            detail=error
         )
     
     try:
@@ -540,9 +547,10 @@ def get_permissions(user_id: int = Depends(get_current_user)):
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.view' not in permissions:
+        error = get_error_response("USR-112")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.view required"
+            detail=error
         )
     
     all_permissions = admin_service.get_all_permissions()

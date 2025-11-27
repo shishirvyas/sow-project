@@ -26,32 +26,32 @@ def get_all_users(include_deleted: bool = False) -> List[Dict[str, Any]]:
         
         query = """
             SELECT 
-                u.user_id,
+                u.id as user_id,
                 u.email,
                 u.full_name,
                 u.is_active,
                 u.created_at,
-                u.last_login,
+                u.last_login_at as last_login,
                 COALESCE(
                     json_agg(
                         json_build_object(
-                            'role_id', r.role_id,
-                            'role_name', r.role_name,
-                            'role_description', r.role_description
+                            'role_id', r.id,
+                            'role_name', r.name,
+                            'role_description', r.description
                         )
-                    ) FILTER (WHERE r.role_id IS NOT NULL),
+                    ) FILTER (WHERE r.id IS NOT NULL),
                     '[]'::json
                 ) as roles
             FROM users u
-            LEFT JOIN user_roles ur ON u.user_id = ur.user_id
-            LEFT JOIN roles r ON ur.role_id = r.role_id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
         """
         
         if not include_deleted:
             query += " WHERE u.is_active = TRUE"
             
         query += """
-            GROUP BY u.user_id, u.email, u.full_name, u.is_active, u.created_at, u.last_login
+            GROUP BY u.id, u.email, u.full_name, u.is_active, u.created_at, u.last_login_at
             ORDER BY u.created_at DESC
         """
         
@@ -71,27 +71,27 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
         
         query = """
             SELECT 
-                u.user_id,
+                u.id as user_id,
                 u.email,
                 u.full_name,
                 u.is_active,
                 u.created_at,
-                u.last_login,
+                u.last_login_at as last_login,
                 COALESCE(
                     json_agg(
                         json_build_object(
-                            'role_id', r.role_id,
-                            'role_name', r.role_name,
-                            'role_description', r.role_description
+                            'role_id', r.id,
+                            'role_name', r.name,
+                            'role_description', r.description
                         )
-                    ) FILTER (WHERE r.role_id IS NOT NULL),
+                    ) FILTER (WHERE r.id IS NOT NULL),
                     '[]'::json
                 ) as roles
             FROM users u
-            LEFT JOIN user_roles ur ON u.user_id = ur.user_id
-            LEFT JOIN roles r ON ur.role_id = r.role_id
-            WHERE u.user_id = %s
-            GROUP BY u.user_id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.id = %s
+            GROUP BY u.id
         """
         
         cursor.execute(query, (user_id,))
@@ -249,27 +249,27 @@ def get_all_roles() -> List[Dict[str, Any]]:
         
         query = """
             SELECT 
-                r.role_id,
-                r.role_name,
-                r.role_description,
+                r.id as role_id,
+                r.name as role_name,
+                r.description as role_description,
                 r.is_system_role,
                 r.created_at,
                 COALESCE(
                     json_agg(
                         json_build_object(
-                            'permission_id', p.permission_id,
-                            'permission_code', p.permission_code,
-                            'permission_name', p.permission_name,
-                            'permission_category', p.permission_category
+                            'permission_id', p.id,
+                            'permission_code', p.code,
+                            'permission_name', p.name,
+                            'permission_category', p.category
                         )
-                    ) FILTER (WHERE p.permission_id IS NOT NULL),
+                    ) FILTER (WHERE p.id IS NOT NULL),
                     '[]'::json
                 ) as permissions
             FROM roles r
-            LEFT JOIN role_permissions rp ON r.role_id = rp.role_id
+            LEFT JOIN role_permissions rp ON r.id = rp.role_id
             LEFT JOIN permissions p ON rp.permission_id = p.id
-            GROUP BY r.role_id
-            ORDER BY r.role_name
+            GROUP BY r.id, r.name, r.description, r.is_system_role, r.created_at
+            ORDER BY r.name
         """
         
         cursor.execute(query)
@@ -288,27 +288,27 @@ def get_role_by_id(role_id: int) -> Optional[Dict[str, Any]]:
         
         query = """
             SELECT 
-                r.role_id,
-                r.role_name,
-                r.role_description,
+                r.id as role_id,
+                r.name as role_name,
+                r.description as role_description,
                 r.is_system_role,
                 r.created_at,
                 COALESCE(
                     json_agg(
                         json_build_object(
-                            'permission_id', p.permission_id,
-                            'permission_code', p.permission_code,
-                            'permission_name', p.permission_name,
-                            'permission_category', p.permission_category
+                            'permission_id', p.id,
+                            'permission_code', p.code,
+                            'permission_name', p.name,
+                            'permission_category', p.category
                         )
-                    ) FILTER (WHERE p.permission_id IS NOT NULL),
+                    ) FILTER (WHERE p.id IS NOT NULL),
                     '[]'::json
                 ) as permissions
             FROM roles r
-            LEFT JOIN role_permissions rp ON r.role_id = rp.role_id
+            LEFT JOIN role_permissions rp ON r.id = rp.role_id
             LEFT JOIN permissions p ON rp.permission_id = p.id
-            WHERE r.role_id = %s
-            GROUP BY r.role_id
+            WHERE r.id = %s
+            GROUP BY r.id, r.name, r.description, r.is_system_role, r.created_at
         """
         
         cursor.execute(query, (role_id,))
@@ -331,14 +331,14 @@ def create_role(role_name: str, role_description: str) -> Dict[str, Any]:
         Created role dictionary
     """
     query = """
-        INSERT INTO roles (role_name, role_description, is_system_role, created_at)
-        VALUES (%s, %s, FALSE, %s)
-        RETURNING role_id, role_name, role_description, is_system_role, created_at
+        INSERT INTO roles (name, display_name, description, is_system_role, created_at)
+        VALUES (%s, %s, %s, FALSE, %s)
+        RETURNING id as role_id, name as role_name, description as role_description, is_system_role, created_at
     """
     
     result = execute_update(
         query,
-        (role_name, role_description, datetime.utcnow()),
+        (role_name, role_name, role_description, datetime.utcnow()),
         return_dict=True
     )
     
@@ -361,11 +361,13 @@ def update_role(role_id: int, role_name: Optional[str] = None, role_description:
     params = []
     
     if role_name is not None:
-        updates.append("role_name = %s")
+        updates.append("name = %s")
+        updates.append("display_name = %s")
+        params.append(role_name)
         params.append(role_name)
     
     if role_description is not None:
-        updates.append("role_description = %s")
+        updates.append("description = %s")
         params.append(role_description)
     
     if not updates:
@@ -376,8 +378,8 @@ def update_role(role_id: int, role_name: Optional[str] = None, role_description:
     query = f"""
         UPDATE roles
         SET {', '.join(updates)}
-        WHERE role_id = %s AND is_system_role = FALSE
-        RETURNING role_id, role_name, role_description, is_system_role, created_at
+        WHERE id = %s AND is_system_role = FALSE
+        RETURNING id as role_id, name as role_name, description as role_description, is_system_role, created_at
     """
     
     result = execute_update(query, tuple(params), return_dict=True)
@@ -394,7 +396,7 @@ def delete_role(role_id: int) -> bool:
     Returns:
         True if successful
     """
-    query = "DELETE FROM roles WHERE role_id = %s AND is_system_role = FALSE"
+    query = "DELETE FROM roles WHERE id = %s AND is_system_role = FALSE"
     execute_update(query, (role_id,))
     return True
 
@@ -421,7 +423,7 @@ def assign_role_permissions(role_id: int, permission_ids: List[int]) -> bool:
         if permission_ids:
             for permission_id in permission_ids:
                 cursor.execute(
-                    "INSERT INTO role_permissions (role_id, permission_id, assigned_at) VALUES (%s, %s, %s)",
+                    "INSERT INTO role_permissions (role_id, permission_id, granted_at) VALUES (%s, %s, %s)",
                     (role_id, permission_id, datetime.utcnow())
                 )
         
@@ -449,7 +451,7 @@ def get_all_permissions() -> List[Dict[str, Any]]:
         ORDER BY category, code
     """
     
-    return execute_query(query, fetch_mode='all', return_dict=True)
+    return execute_query(query, fetch_all=True)
 
 
 # ==================== AUDIT LOG ====================
@@ -495,7 +497,7 @@ def get_audit_logs(
                 al.ip_address,
                 al.created_at
             FROM audit_log al
-            LEFT JOIN users u ON al.user_id = u.user_id
+            LEFT JOIN users u ON al.user_id = u.id
             WHERE 1=1
         """
         

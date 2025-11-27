@@ -25,16 +25,22 @@ import {
   InputLabel,
   Alert,
   CircularProgress,
-  Tooltip
+  Tooltip,
+  InputAdornment
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   PersonAdd as PersonAddIcon,
-  AdminPanelSettings as AdminIcon
+  AdminPanelSettings as AdminIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon,
+  VpnKey as VpnKeyIcon,
+  ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { apiFetch } from '../../config/api';
+import MainLayout from '../../layouts/MainLayout';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -57,6 +63,8 @@ export default function Users() {
     is_active: true
   });
   const [selectedRoles, setSelectedRoles] = useState([]);
+  const [showPassword, setShowPassword] = useState(false);
+  const [autoGeneratePassword, setAutoGeneratePassword] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -69,7 +77,21 @@ export default function Users() {
       const response = await apiFetch('/admin/users', {
         method: 'GET'
       });
-      setUsers(response.users);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        // Check if it's a structured error response
+        if (errorData.detail && errorData.detail.error_code) {
+          setError(errorData.detail.user_message || errorData.detail.message);
+        } else {
+          setError(errorData.detail || 'Failed to load users');
+        }
+        setUsers([]);
+        return;
+      }
+      
+      const data = await response.json();
+      setUsers(data.users);
       setError('');
     } catch (err) {
       setError('Failed to load users: ' + err.message);
@@ -83,22 +105,57 @@ export default function Users() {
       const response = await apiFetch('/admin/roles', {
         method: 'GET'
       });
-      setRoles(response.roles);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.warn('Cannot load roles:', errorData.detail?.user_message || 'Permission denied');
+        setRoles([]);
+        return;
+      }
+      
+      const data = await response.json();
+      setRoles(data.roles);
     } catch (err) {
       console.error('Failed to load roles:', err);
+      setRoles([]);
     }
+  };
+
+  const generatePassword = () => {
+    const length = 12;
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+      password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
   };
 
   const handleCreateUser = async () => {
     try {
+      let passwordToUse = formData.password;
+      
+      // Generate password if auto-generate is enabled
+      if (autoGeneratePassword) {
+        passwordToUse = generatePassword();
+        setFormData({ ...formData, password: passwordToUse });
+      }
+      
       await apiFetch('/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, password: passwordToUse })
       });
-      setSuccess('User created successfully');
+      
+      if (autoGeneratePassword) {
+        setSuccess(`User created successfully! Generated password: ${passwordToUse} (Please save this - it won't be shown again)`);
+      } else {
+        setSuccess('User created successfully');
+      }
+      
       setCreateModalOpen(false);
       setFormData({ email: '', full_name: '', password: '', is_active: true });
+      setAutoGeneratePassword(false);
       loadUsers();
     } catch (err) {
       setError('Failed to create user: ' + err.message);
@@ -179,13 +236,39 @@ export default function Users() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
+      <MainLayout>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress />
+        </Box>
+      </MainLayout>
+    );
+  }
+
+  // Show error prominently if there's a permission issue
+  if (error && users.length === 0) {
+    return (
+      <MainLayout>
+        <Box p={3}>
+          <Typography variant="h4" mb={3}>User Management</Typography>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+          <Paper sx={{ p: 4, textAlign: 'center' }}>
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              Access Restricted
+            </Typography>
+            <Typography color="text.secondary">
+              You don't have the necessary permissions to view this page.
+              Please contact your system administrator if you need access.
+            </Typography>
+          </Paper>
+        </Box>
+      </MainLayout>
     );
   }
 
   return (
+    <MainLayout>
     <Box p={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">User Management</Typography>
@@ -199,7 +282,7 @@ export default function Users() {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
@@ -308,6 +391,7 @@ export default function Users() {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               fullWidth
               required
+              helperText="User will use this email to login"
             />
             <TextField
               label="Full Name"
@@ -316,14 +400,58 @@ export default function Users() {
               fullWidth
               required
             />
-            <TextField
-              label="Password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              fullWidth
-              required
+            
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={autoGeneratePassword}
+                  onChange={(e) => {
+                    setAutoGeneratePassword(e.target.checked);
+                    if (e.target.checked) {
+                      setFormData({ ...formData, password: '' });
+                    }
+                  }}
+                  color="secondary"
+                />
+              }
+              label={
+                <Box display="flex" alignItems="center" gap={1}>
+                  <VpnKeyIcon fontSize="small" />
+                  Auto-generate secure password
+                </Box>
+              }
             />
+            
+            {!autoGeneratePassword && (
+              <TextField
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                fullWidth
+                required
+                helperText="Minimum 8 characters, include uppercase, lowercase, number and special character"
+                InputProps={{
+                  endAdornment: (
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                    </IconButton>
+                  )
+                }}
+              />
+            )}
+            
+            {autoGeneratePassword && (
+              <Alert severity="info">
+                A secure random password will be generated and displayed after creation. 
+                Make sure to save it as it won't be shown again!
+              </Alert>
+            )}
+            
             <FormControlLabel
               control={
                 <Switch
@@ -336,13 +464,20 @@ export default function Users() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateModalOpen(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setCreateModalOpen(false);
+            setAutoGeneratePassword(false);
+            setFormData({ email: '', full_name: '', password: '', is_active: true });
+          }}>
+            Cancel
+          </Button>
           <Button
             onClick={handleCreateUser}
             variant="contained"
-            disabled={!formData.email || !formData.full_name || !formData.password}
+            disabled={!formData.email || !formData.full_name || (!autoGeneratePassword && !formData.password)}
+            startIcon={<PersonAddIcon />}
           >
-            Create
+            Create User
           </Button>
         </DialogActions>
       </Dialog>
@@ -429,5 +564,6 @@ export default function Users() {
         </DialogActions>
       </Dialog>
     </Box>
+    </MainLayout>
   );
 }

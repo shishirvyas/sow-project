@@ -36,6 +36,7 @@ import {
   Lock as LockIcon
 } from '@mui/icons-material';
 import { apiFetch } from '../../config/api';
+import MainLayout from '../../layouts/MainLayout';
 
 export default function Roles() {
   const [roles, setRoles] = useState([]);
@@ -68,7 +69,20 @@ export default function Roles() {
       const response = await apiFetch('/admin/roles', {
         method: 'GET'
       });
-      setRoles(response.roles);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.detail && errorData.detail.error_code) {
+          setError(errorData.detail.user_message || errorData.detail.message);
+        } else {
+          setError(errorData.detail || 'Failed to load roles');
+        }
+        setRoles([]);
+        return;
+      }
+      
+      const data = await response.json();
+      setRoles(data.roles);
       setError('');
     } catch (err) {
       setError('Failed to load roles: ' + err.message);
@@ -82,9 +96,19 @@ export default function Roles() {
       const response = await apiFetch('/admin/permissions', {
         method: 'GET'
       });
-      setPermissions(response.permissions);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.warn('Cannot load permissions:', errorData.detail?.user_message || 'Permission denied');
+        setPermissions([]);
+        return;
+      }
+      
+      const data = await response.json();
+      setPermissions(data.permissions);
     } catch (err) {
       console.error('Failed to load permissions:', err);
+      setPermissions([]);
     }
   };
 
@@ -200,13 +224,39 @@ export default function Roles() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
+      <MainLayout>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress />
+        </Box>
+      </MainLayout>
+    );
+  }
+
+  // Show error prominently if there's a permission issue
+  if (error && roles.length === 0) {
+    return (
+      <MainLayout>
+        <Box p={3}>
+          <Typography variant="h4" mb={3}>Role Management</Typography>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+          <Paper sx={{ p: 4, textAlign: 'center' }}>
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              Access Restricted
+            </Typography>
+            <Typography color="text.secondary">
+              You don't have the necessary permissions to view this page.
+              Please contact your system administrator if you need access.
+            </Typography>
+          </Paper>
+        </Box>
+      </MainLayout>
     );
   }
 
   return (
+    <MainLayout>
     <Box p={3}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Role Management</Typography>
@@ -220,7 +270,7 @@ export default function Roles() {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
@@ -437,5 +487,6 @@ export default function Roles() {
         </DialogActions>
       </Dialog>
     </Box>
+    </MainLayout>
   );
 }
