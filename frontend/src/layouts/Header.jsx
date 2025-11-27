@@ -11,13 +11,46 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import Brightness4Icon from '@mui/icons-material/Brightness4'
 import Brightness7Icon from '@mui/icons-material/Brightness7'
 import Tooltip from '@mui/material/Tooltip'
-import { Link as RouterLink } from 'react-router-dom'
+import Avatar from '@mui/material/Avatar'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import Divider from '@mui/material/Divider'
+import LogoutIcon from '@mui/icons-material/Logout'
+import PersonIcon from '@mui/icons-material/Person'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import AccountPopover from 'src/components/AccountPopover/AccountPopover'
 import NotificationsPopover from 'src/components/Notifications/NotificationsPopover'
 import { ThemeContext } from 'src/theme/ThemeProvider'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) {
   const { mode, toggleTheme } = React.useContext(ThemeContext)
+  const { user, isAuthenticated, logout } = useAuth()
+  const navigate = useNavigate()
+  const [anchorEl, setAnchorEl] = React.useState(null)
+
+  const handleOpenMenu = (event) => {
+    setAnchorEl(event.currentTarget)
+  }
+
+  const handleCloseMenu = () => {
+    setAnchorEl(null)
+  }
+
+  const handleLogout = () => {
+    logout()
+    handleCloseMenu()
+    navigate('/login')
+  }
+
+  const getInitials = (name) => {
+    if (!name) return '?'
+    const parts = name.trim().split(' ')
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    }
+    return parts[0].substring(0, 2).toUpperCase()
+  }
   return (
     <AppBar position="sticky" color="inherit" elevation={1} sx={{ mb: 3 }}>
       <Toolbar sx={{ maxWidth: 1280, mx: 'auto', width: '100%' }}>
@@ -74,10 +107,44 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
 
         <Box sx={{ flex: 1 }} />
 
-        {/* Desktop account popover */}
-        <Box sx={{ display: { xs: 'none', md: 'block' }, mr: 2 }}>
-          <AccountPopover />
-        </Box>
+        {/* User Avatar and Menu */}
+        {isAuthenticated && user && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+            <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              {user.full_name}
+            </Typography>
+            <Tooltip title="Account">
+              <IconButton onClick={handleOpenMenu} size="small">
+                <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                  {getInitials(user.full_name)}
+                </Avatar>
+              </IconButton>
+            </Tooltip>
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleCloseMenu}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="subtitle2">{user.full_name}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {user.email}
+                </Typography>
+              </Box>
+              <Divider />
+              <MenuItem component={RouterLink} to="/profile" onClick={handleCloseMenu}>
+                <PersonIcon sx={{ mr: 1 }} fontSize="small" />
+                Profile
+              </MenuItem>
+              <MenuItem onClick={handleLogout}>
+                <LogoutIcon sx={{ mr: 1 }} fontSize="small" />
+                Logout
+              </MenuItem>
+            </Menu>
+          </Box>
+        )}
 
         {/* Desktop collapse toggle */}
         <Tooltip
@@ -102,26 +169,20 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
           </IconButton>
         </Tooltip>
 
-        <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1, alignItems: 'center' }}>
-          <Button component={RouterLink} to="/dashboard" color="primary" variant="text">
-            Dashboard
-          </Button>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <NotificationsPopover />
           
           <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <IconButton onClick={toggleTheme} color="inherit" sx={{ ml: 1 }}>
+            <IconButton onClick={toggleTheme} color="inherit">
               {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
             </IconButton>
           </Tooltip>
 
-          <Button component={RouterLink} to="/sign-in" color="primary" variant="outlined" sx={{ ml: 1 }}>
-            Sign In
-          </Button>
-        </Box>
-
-        {/* Mobile account popover - right side */}
-        <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-          <AccountPopover />
+          {!isAuthenticated && (
+            <Button component={RouterLink} to="/login" color="primary" variant="outlined" sx={{ ml: 1 }}>
+              Sign In
+            </Button>
+          )}
         </Box>
       </Toolbar>
     </AppBar>

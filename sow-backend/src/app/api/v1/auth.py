@@ -1,0 +1,209 @@
+"""
+Authentication endpoints for login, logout, token refresh, and user profile
+"""
+import logging
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import timedelta
+
+from src.app.services.auth_service import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_user_permissions,
+    get_user_menu,
+    get_user_roles,
+    get_user_by_id
+)
+from src.app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+security = HTTPBearer()
+
+# Pydantic models for request/response
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: dict
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class UserProfileResponse(BaseModel):
+    user: dict
+    permissions: list[str]
+    menu: list[dict]
+    roles: list[dict]
+
+# Dependency to get current user from token
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Dependency to extract and verify JWT token from Authorization header
+    Returns user_id if valid, raises HTTPException otherwise
+    """
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify token type
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return int(user_id)
+
+@router.post("/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """
+    Authenticate user and return access + refresh tokens
+    
+    Test credentials (password: password123):
+    - admin@skope.ai - Full admin access
+    - manager@skope.ai - Management features
+    - analyst@skope.ai - Analysis only
+    - viewer@skope.ai - Read-only access
+    """
+    logger.info(f"🔐 LOGIN REQUEST received for: {request.email}")
+    
+    try:
+        user = authenticate_user(request.email, request.password)
+        
+        if not user:
+            logger.warning(f"❌ LOGIN FAILED - Authentication failed for: {request.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Create tokens
+        logger.info(f"🎫 Generating tokens for user: {request.email} (ID: {user['id']})")
+        access_token = create_access_token(data={"sub": str(user['id']), "email": user['email']})
+        refresh_token = create_refresh_token(data={"sub": str(user['id']), "email": user['email']})
+        
+        logger.info(f"✅ LOGIN SUCCESS for: {request.email} (User ID: {user['id']}, Name: {user['full_name']})")
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": user
+        }
+    except HTTPException:
+        # Re-raise HTTPException as-is
+        raise
+    except Exception as e:
+        logger.error(f"❌ LOGIN ERROR - Unexpected error for {request.email}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during login"
+        )
+
+@router.post("/refresh")
+async def refresh_token(request: RefreshRequest):
+    """
+    Refresh access token using a valid refresh token
+    """
+    payload = decode_token(request.refresh_token)
+    
+    if payload is None or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = payload.get("sub")
+    email = payload.get("email")
+    
+    if not user_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create new access token
+    access_token = create_access_token(data={"sub": user_id, "email": email})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
+@router.post("/logout")
+async def logout(user_id: int = Depends(get_current_user)):
+    """
+    Logout user (client should discard tokens)
+    In a production system, you might want to blacklist tokens here
+    """
+    return {"message": "Successfully logged out"}
+
+@router.get("/me", response_model=UserProfileResponse)
+async def get_current_user_profile(user_id: int = Depends(get_current_user)):
+    """
+    Get current user profile with permissions, menu, and roles
+    This is the main endpoint for frontend to fetch user context
+    """
+    user = get_user_by_id(user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get user's permissions, menu, and roles
+    permissions = get_user_permissions(user_id)
+    menu = get_user_menu(user_id)
+    roles = get_user_roles(user_id)
+    
+    return {
+        "user": user,
+        "permissions": permissions,
+        "menu": menu,
+        "roles": roles
+    }
+
+@router.get("/permissions")
+async def get_my_permissions(user_id: int = Depends(get_current_user)):
+    """
+    Get list of permission codes for current user
+    """
+    permissions = get_user_permissions(user_id)
+    return {"permissions": permissions}
+
+@router.get("/menu")
+async def get_my_menu(user_id: int = Depends(get_current_user)):
+    """
+    Get menu items accessible to current user
+    """
+    menu = get_user_menu(user_id)
+    return {"menu": menu}

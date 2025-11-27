@@ -39,7 +39,7 @@ export default function AnalysisDetail() {
 
   const checkPDFAvailability = async () => {
     try {
-      const response = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      const response = await apiFetch(`analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -63,7 +63,7 @@ export default function AnalysisDetail() {
     
     try {
       // First check if PDF exists
-      const statusResponse = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      const statusResponse = await apiFetch(`analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
       
       if (!statusResponse.ok) {
         if (statusResponse.status === 404) {
@@ -149,7 +149,7 @@ export default function AnalysisDetail() {
     setError(null)
 
     try {
-      const response = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}`)
+      const response = await apiFetch(`analysis-history/${encodeURIComponent(resultBlobName)}`)
 
       if (!response.ok) {
         if (response.status === 404) {

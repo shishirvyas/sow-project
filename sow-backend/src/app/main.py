@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.v1.endpoints import router as v1_router
 from .api.v1.profile import router as profile_router
+from .api.v1.auth import router as auth_router
+from .api.v1.admin import router as admin_router
 
 # Try to load .env from the sow-backend root so pydantic settings pick it up
 try:
@@ -52,6 +54,8 @@ app.add_middleware(
 
 app.include_router(v1_router, prefix="/api/v1")
 app.include_router(profile_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
 @app.get("/health")
 async def health():

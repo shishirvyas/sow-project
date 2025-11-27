@@ -5,19 +5,7 @@ import Box from '@mui/material/Box'
 import Header from './Header'
 import Typography from '@mui/material/Typography'
 import Drawer from '@mui/material/Drawer'
-import List from '@mui/material/List'
-import Tooltip from '@mui/material/Tooltip'
-import ListItem from '@mui/material/ListItem'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListItemText from '@mui/material/ListItemText'
 import Divider from '@mui/material/Divider'
-import AccountCircle from '@mui/icons-material/AccountCircle'
-import DashboardIcon from '@mui/icons-material/Dashboard'
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
-import DescriptionIcon from '@mui/icons-material/Description'
-import HistoryIcon from '@mui/icons-material/History'
-import CloseIcon from '@mui/icons-material/Close'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -31,6 +19,12 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import WarningIcon from '@mui/icons-material/Warning'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
+import CloseIcon from '@mui/icons-material/Close'
+import DynamicMenu from '../components/Menu/DynamicMenu'
 
 const drawerWidth = 240
 const collapsedWidth = 72
@@ -113,7 +107,7 @@ export default function MainLayout({ children }) {
 
   // Fetch profile data
   useEffect(() => {
-    apiFetch('api/v1/profile')
+    apiFetch('profile')
       .then(res => res.json())
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))
@@ -123,29 +117,54 @@ export default function MainLayout({ children }) {
   const fetchTodaysAnalyses = React.useCallback(async () => {
     setLoadingAnalyses(true)
     try {
-      const response = await apiFetch('api/v1/analysis-history')
-      const { history } = response
+      const response = await apiFetch('analysis-history')
       
-      console.log('👉 MainLayout: Checking today\'s analyses. Total items:', history.length)
+      if (!response.ok) {
+        console.error('❌ MainLayout: Failed to fetch analysis history, status:', response.status)
+        setTodaysAnalyses([])
+        return
+      }
       
-      // Filter for today's completed analyses
-      const todaysCompleted = history.filter(item => {
-        const isCompletedToday = isToday(item.processing_completed_at) || isToday(item.created)
-        const isCompleted = ['success', 'partial_success'].includes(item.status)
-        
-        if (isCompleted) {
-          console.log('📅 MainLayout item:', {
-            blob: item.result_blob_name,
-            completed_at: item.processing_completed_at,
-            created: item.created,
-            isToday: isCompletedToday
-          })
-        }
-        
-        return isCompletedToday && isCompleted
+      const data = await response.json()
+      const history = data.history || []
+      
+      console.log('👉 MainLayout: Checking today\'s analyses')
+      console.log('   Total items received:', history.length)
+      console.log('   Today\'s date:', new Date().toDateString())
+      
+      // Log all items for debugging
+      history.forEach((item, idx) => {
+        console.log(`   [${idx}] ${item.source_blob} - Status: ${item.status}, Completed: ${item.processing_completed_at}, Created: ${item.created}`)
+      })
+      
+      // Filter for completed analyses
+      const completed = history.filter(item => 
+        ['success', 'partial_success'].includes(item.status)
+      )
+      
+      console.log('   Total completed items:', completed.length)
+      
+      // First try: Today's completed analyses
+      let todaysCompleted = completed.filter(item => {
+        const completedToday = isToday(item.processing_completed_at)
+        const createdToday = isToday(item.created)
+        return completedToday || createdToday
       })
       
       console.log('✅ MainLayout: Found', todaysCompleted.length, 'completed today')
+      
+      // Fallback: If no items today, show last 24 hours
+      if (todaysCompleted.length === 0) {
+        const last24Hours = new Date()
+        last24Hours.setHours(last24Hours.getHours() - 24)
+        
+        todaysCompleted = completed.filter(item => {
+          const itemDate = new Date(item.processing_completed_at || item.created)
+          return itemDate >= last24Hours
+        }).slice(0, 3)
+        
+        console.log('📅 MainLayout: Showing', todaysCompleted.length, 'from last 24 hours (no items today)')
+      }
       
       // Take only the 3 most recent
       setTodaysAnalyses(todaysCompleted.slice(0, 3))
@@ -157,10 +176,10 @@ export default function MainLayout({ children }) {
     }
   }, [])
 
-  // Fetch on mount and refresh every 30 seconds
+  // Fetch on mount and refresh every 60 seconds (reduced from 30s to minimize server load)
   useEffect(() => {
     fetchTodaysAnalyses()
-    const interval = setInterval(fetchTodaysAnalyses, 30000)
+    const interval = setInterval(fetchTodaysAnalyses, 60000)
     return () => clearInterval(interval)
   }, [fetchTodaysAnalyses])
 
@@ -181,138 +200,11 @@ export default function MainLayout({ children }) {
 
   const drawerContent = (
     <>
-      <List>
-        <ListItem disablePadding>
-          <Tooltip
-            title="Dashboard"
-            placement="right"
-            disableHoverListener={!isMdUp || !collapsed}
-            enterDelay={100}
-            leaveDelay={200}
-            enterNextDelay={100}
-          >
-            <span>
-              <ListItemButton
-                component={RouterLink}
-                to="/dashboard"
-                onClick={() => setMobileOpen(false)}
-                sx={{ justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', px: 2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center' }}>
-                  <DashboardIcon />
-                </ListItemIcon>
-                <ListItemText
-                  sx={{
-                    opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 200ms cubic-bezier(0.4,0,0.2,1), width 180ms cubic-bezier(0.4,0,0.2,1)',
-                    width: isMdUp && collapsed ? 0 : 'auto',
-                    overflow: 'hidden',
-                  }}
-                  primary="Dashboard"
-                />
-              </ListItemButton>
-            </span>
-          </Tooltip>
-        </ListItem>
-      </List>
-      <Divider />
-      
-      {/* Core Feature Section */}
-      <List sx={{ bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.08)' : 'rgba(32,101,209,0.04)', py: 1 }}>
-        <ListItem disablePadding>
-          <Tooltip title="Analyze Doc" placement="right" disableHoverListener={!isMdUp || !collapsed}>
-            <span>
-              <ListItemButton
-                component={RouterLink}
-                to="/analyze-doc"
-                onClick={() => setMobileOpen(false)}
-                sx={{ 
-                  justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', 
-                  px: 2,
-                  '&:hover': {
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.12)' : 'rgba(32,101,209,0.08)',
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center', color: 'primary.main' }}>
-                  <DescriptionIcon />
-                </ListItemIcon>
-                <ListItemText
-                  sx={{
-                    opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 160ms ease, width 160ms ease',
-                    width: isMdUp && collapsed ? 0 : 'auto',
-                    overflow: 'hidden',
-                  }}
-                  primary="Analyze Doc"
-                  primaryTypographyProps={{ fontWeight: 600, color: 'primary.main' }}
-                />
-              </ListItemButton>
-            </span>
-          </Tooltip>
-        </ListItem>
-        <ListItem disablePadding>
-          <Tooltip title="Analysis History" placement="right" disableHoverListener={!isMdUp || !collapsed}>
-            <span>
-              <ListItemButton
-                component={RouterLink}
-                to="/analysis-history"
-                onClick={() => setMobileOpen(false)}
-                sx={{ 
-                  justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', 
-                  px: 2,
-                  '&:hover': {
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(45,128,254,0.12)' : 'rgba(32,101,209,0.08)',
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center', color: 'primary.main' }}>
-                  <HistoryIcon />
-                </ListItemIcon>
-                <ListItemText
-                  sx={{
-                    opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 160ms ease, width 160ms ease',
-                    width: isMdUp && collapsed ? 0 : 'auto',
-                    overflow: 'hidden',
-                  }}
-                  primary="Analysis History"
-                  primaryTypographyProps={{ fontWeight: 600, color: 'primary.main' }}
-                />
-              </ListItemButton>
-            </span>
-          </Tooltip>
-        </ListItem>
-      </List>
-      
-      <Divider />
-      <List>
-        <ListItem disablePadding>
-          <Tooltip title="Account" placement="right" disableHoverListener={!isMdUp || !collapsed}>
-            <span>
-              <ListItemButton
-                component={RouterLink}
-                to="/sign-in"
-                onClick={() => setMobileOpen(false)}
-                sx={{ justifyContent: isMdUp && collapsed ? 'center' : 'flex-start', px: 2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 0, mr: isMdUp && collapsed ? 0 : 2, justifyContent: 'center' }}>
-                  <AccountCircle />
-                </ListItemIcon>
-                <ListItemText
-                  sx={{
-                    opacity: isMdUp && collapsed ? 0 : 1,
-                    transition: 'opacity 160ms ease, width 160ms ease',
-                    width: isMdUp && collapsed ? 0 : 'auto',
-                    overflow: 'hidden',
-                  }}
-                  primary="Account"
-                />
-              </ListItemButton>
-            </span>
-          </Tooltip>
-        </ListItem>
-      </List>
+      <DynamicMenu 
+        collapsed={collapsed} 
+        isMdUp={isMdUp} 
+        onItemClick={() => setMobileOpen(false)} 
+      />
     </>
   )
 

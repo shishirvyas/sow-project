@@ -55,7 +55,7 @@ export default function AnalysisHistory() {
     try {
       // First check if PDF exists
       console.log(`[PDF DOWNLOAD] Checking PDF status...`)
-      const statusResponse = await apiFetch(`api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
+      const statusResponse = await apiFetch(`analysis-history/${encodeURIComponent(resultBlobName)}/pdf-url`)
       
       // Handle 404 or other errors
       if (!statusResponse.ok) {
@@ -166,7 +166,7 @@ export default function AnalysisHistory() {
     setError(null)
     
     try {
-      const response = await apiFetch('api/v1/analysis-history')
+      const response = await apiFetch('analysis-history')
       
       if (!response.ok) {
         throw new Error(`Failed to fetch history: ${response.statusText}`)

@@ -20,7 +20,7 @@ export default function Profile() {
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
-    apiFetch('api/v1/profile')
+    apiFetch('profile')
       .then(res => res.json())
       .then(data => {
         setProfile(data)

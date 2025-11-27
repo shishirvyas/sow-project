@@ -8,13 +8,8 @@ export const getApiUrl = (endpoint) => {
   // Remove leading slash if present
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
   
-  // In development, use relative URLs (proxy will handle it)
-  // In production, use full backend URL
-  if (import.meta.env.MODE === 'development') {
-    return `/${cleanEndpoint}`
-  }
-  
-  return `${API_BASE_URL}/${cleanEndpoint}`
+  // Always use full backend URL with /api/v1 prefix
+  return `${API_BASE_URL}/api/v1/${cleanEndpoint}`
 }
 
 // API Logger - logs all API calls with request/response details
@@ -80,11 +75,20 @@ const logApiError = (method, url, error, startTime) => {
   console.groupEnd()
 }
 
-// Enhanced fetch wrapper with logging
+// Enhanced fetch wrapper with logging and authentication
 export const apiFetch = async (endpoint, options = {}) => {
   const url = getApiUrl(endpoint)
   const method = options.method || 'GET'
   const startTime = Date.now()
+  
+  // Add authentication token if available
+  const token = localStorage.getItem('access_token')
+  if (token) {
+    options.headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`,
+    }
+  }
   
   // Log the API call
   logApiCall(method, url, options, startTime)
