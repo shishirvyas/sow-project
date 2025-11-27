@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch } from '../config/api'
+import { useAuth } from '../contexts/AuthContext'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Avatar from '@mui/material/Avatar'
@@ -10,27 +10,21 @@ import IconButton from '@mui/material/IconButton'
 import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
 import Grid from '@mui/material/Grid'
+import Divider from '@mui/material/Divider'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import DataTable from 'src/components/DataTable/DataTable'
+import WorkIcon from '@mui/icons-material/Work'
+import BusinessIcon from '@mui/icons-material/Business'
+import TimelineIcon from '@mui/icons-material/Timeline'
+import EmailIcon from '@mui/icons-material/Email'
+import PhoneIcon from '@mui/icons-material/Phone'
+import LocationOnIcon from '@mui/icons-material/LocationOn'
 import MainLayout from '../layouts/MainLayout'
 
 export default function Profile() {
   const navigate = useNavigate()
-  const [profile, setProfile] = React.useState(null)
-  const [loading, setLoading] = React.useState(true)
-
-  React.useEffect(() => {
-    apiFetch('profile')
-      .then(res => res.json())
-      .then(data => {
-        setProfile(data)
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error('Failed to fetch profile:', err)
-        setLoading(false)
-      })
-  }, [])
+  const { user, loading } = useAuth()
+  
+  const profile = user
 
   if (loading) {
     return (
@@ -51,67 +45,116 @@ export default function Profile() {
         <Typography variant="h5">Profile</Typography>
       </Box>
 
-      <Paper sx={{ p: 3, mb: 3 }} elevation={1}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', mb: 3 }}>
-          <Avatar sx={{ width: 96, height: 96, bgcolor: 'primary.main', mb: 2 }}>
-            {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+      <Paper sx={{ p: 4, mb: 3 }} elevation={2}>
+        {/* Header Section */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', mb: 4 }}>
+          <Avatar 
+            src={profile?.avatar_url} 
+            sx={{ width: 120, height: 120, bgcolor: 'primary.main', mb: 2, fontSize: '3rem' }}
+          >
+            {profile?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?'}
           </Avatar>
-          <Typography variant="h4" gutterBottom>{profile?.name || 'Loading...'}</Typography>
-          <Typography variant="body1" color="text.secondary">{profile?.role} — {profile?.department}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {profile?.location} • {profile?.experience_years} years experience
+          <Typography variant="h3" gutterBottom fontWeight={600}>
+            {profile?.full_name || 'Loading...'}
           </Typography>
-          <Box sx={{ mt: 3, display: 'flex', gap: 1 }}>
-            <Button variant="contained" size="medium">
-              Edit Profile
-            </Button>
-            <Button variant="outlined" size="medium">
-              Settings
-            </Button>
-          </Box>
+          
+          {/* Job Title & Department */}
+          {profile?.job_title && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <WorkIcon color="primary" fontSize="small" />
+              <Typography variant="h6" color="primary">
+                {profile.job_title}
+              </Typography>
+            </Box>
+          )}
+          
+          {profile?.department && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <BusinessIcon color="action" fontSize="small" />
+              <Typography variant="body1" color="text.secondary">
+                {profile.department}
+              </Typography>
+            </Box>
+          )}
+          
+          {profile?.years_of_experience && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TimelineIcon color="action" fontSize="small" />
+              <Typography variant="body1" color="text.secondary">
+                {profile.years_of_experience}+ years of experience
+              </Typography>
+            </Box>
+          )}
         </Box>
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+        <Divider sx={{ my: 3 }} />
+
+        {/* Biography Section */}
+        {profile?.bio && (
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h6" gutterBottom fontWeight={600} color="primary">
               About
             </Typography>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              {profile?.bio}
+            <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.8 }}>
+              {profile.bio}
             </Typography>
+          </Box>
+        )}
 
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Contact Information
-            </Typography>
-            <Typography variant="body2">Email: {profile?.email}</Typography>
-            <Typography variant="body2">Phone: {profile?.contact?.phone}</Typography>
-            {profile?.location && <Typography variant="body2">Location: {profile?.location}</Typography>}
-          </Grid>
+        <Divider sx={{ my: 3 }} />
 
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Skills & Expertise
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-              {profile?.skills?.map((skill) => (
-                <Chip key={skill} label={skill} size="small" color="primary" variant="outlined" />
-              ))}
-            </Box>
-
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Social Links
-            </Typography>
-            {profile?.social?.linkedin && (
-              <Typography variant="body2">LinkedIn: {profile.social.linkedin}</Typography>
+        {/* Contact Information */}
+        <Box>
+          <Typography variant="h6" gutterBottom fontWeight={600} color="primary">
+            Contact Information
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                <EmailIcon color="action" />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Email</Typography>
+                  <Typography variant="body2">{profile?.email}</Typography>
+                </Box>
+              </Box>
+            </Grid>
+            
+            {profile?.phone && (
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                  <PhoneIcon color="action" />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Phone</Typography>
+                    <Typography variant="body2">{profile.phone}</Typography>
+                  </Box>
+                </Box>
+              </Grid>
             )}
-            {profile?.social?.github && (
-              <Typography variant="body2">GitHub: {profile.social.github}</Typography>
+            
+            {profile?.location && (
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                  <LocationOnIcon color="action" />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Location</Typography>
+                    <Typography variant="body2">{profile.location}</Typography>
+                  </Box>
+                </Box>
+              </Grid>
             )}
           </Grid>
-        </Grid>
+        </Box>
+
+        {/* Admin Badge */}
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+          <Chip 
+            label="Administrator" 
+            color="primary" 
+            size="medium"
+            sx={{ fontWeight: 600, px: 2 }}
+          />
+        </Box>
       </Paper>
-
-      <DataTable title="Recent Projects" />
     </MainLayout>
   )
 }

@@ -3,7 +3,7 @@ import { ThemeProvider as MUIThemeProvider } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import { getTheme } from './index'
 
-const THEME_KEY = 'skope_theme_mode'
+const THEME_KEY = 'skope360_theme_mode'
 
 export const ThemeContext = React.createContext({
   mode: 'light',

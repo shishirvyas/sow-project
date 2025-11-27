@@ -25,6 +25,7 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import CloseIcon from '@mui/icons-material/Close'
 import DynamicMenu from '../components/Menu/DynamicMenu'
+import { useAuth } from '../contexts/AuthContext'
 
 const drawerWidth = 240
 const collapsedWidth = 72
@@ -100,18 +101,10 @@ export default function MainLayout({ children }) {
       return false
     }
   })
-  const [profile, setProfile] = useState(null)
+  const { user } = useAuth()
   const [profileCardOpen, setProfileCardOpen] = useState(true)
   const [todaysAnalyses, setTodaysAnalyses] = useState([])
   const [loadingAnalyses, setLoadingAnalyses] = useState(false)
-
-  // Fetch profile data
-  useEffect(() => {
-    apiFetch('profile')
-      .then(res => res.json())
-      .then(data => setProfile(data))
-      .catch(err => console.error('Failed to fetch profile:', err))
-  }, [])
 
   // Fetch today's completed analyses
   const fetchTodaysAnalyses = React.useCallback(async () => {
@@ -263,13 +256,13 @@ export default function MainLayout({ children }) {
               </IconButton>
               <ListItem>
                 <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: 'primary.main' }}>
-                    {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+                  <Avatar src={user?.avatar_url} sx={{ bgcolor: 'primary.main' }}>
+                    {user?.full_name ? getInitials(user.full_name) : '?'}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText 
-                  primary={profile?.name || 'Loading...'} 
-                  secondary={profile?.role || ''}
+                  primary={user?.full_name || 'Loading...'} 
+                  secondary={user?.job_title || ''}
                 />
               </ListItem>
               <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>

@@ -19,7 +19,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import WarningIcon from '@mui/icons-material/Warning'
 import Chip from '@mui/material/Chip'
 
-const STORAGE_KEY = 'skope_notifications_viewed'
+const STORAGE_KEY = 'skope360_notifications_viewed'
 
 // Helper to check if a date is today
 function isToday(dateString) {

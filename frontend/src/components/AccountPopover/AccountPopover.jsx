@@ -1,5 +1,4 @@
 import React from 'react'
-import { apiFetch } from '../../config/api'
 import Avatar from '@mui/material/Avatar'
 import Popover from '@mui/material/Popover'
 import Box from '@mui/material/Box'
@@ -10,6 +9,7 @@ import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Divider from '@mui/material/Divider'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 
 // Helper to generate initials from name
 function getInitials(name) {
@@ -23,14 +23,7 @@ function getInitials(name) {
 
 export default function AccountPopover() {
   const [anchorEl, setAnchorEl] = React.useState(null)
-  const [profile, setProfile] = React.useState(null)
-
-  React.useEffect(() => {
-    apiFetch('profile')
-      .then(res => res.json())
-      .then(data => setProfile(data))
-      .catch(err => console.error('Failed to fetch profile:', err))
-  }, [])
+  const { user } = useAuth()
 
   const handleOpen = (e) => setAnchorEl(e.currentTarget)
   const handleClose = () => setAnchorEl(null)
@@ -48,12 +41,13 @@ export default function AccountPopover() {
     <>
       <Avatar
         onClick={handleOpen}
+        src={user?.avatar_url}
         sx={{ bgcolor: 'primary.main', width: 40, height: 40, cursor: 'pointer' }}
         aria-controls={open ? 'account-popover' : undefined}
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
       >
-        {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+        {user?.full_name ? getInitials(user.full_name) : '?'}
       </Avatar>
 
       <Popover
@@ -67,12 +61,12 @@ export default function AccountPopover() {
       >
         <Box sx={{ p: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1 }}>
-            <Avatar sx={{ bgcolor: 'primary.main' }}>
-              {profile?.initials || (profile?.name ? getInitials(profile.name) : '?')}
+            <Avatar src={user?.avatar_url} sx={{ bgcolor: 'primary.main' }}>
+              {user?.full_name ? getInitials(user.full_name) : '?'}
             </Avatar>
             <Box>
-              <Typography variant="subtitle1">{profile?.name || 'Loading...'}</Typography>
-              <Typography variant="body2" color="text.secondary">{profile?.role || ''}</Typography>
+              <Typography variant="subtitle1">{user?.full_name || 'Loading...'}</Typography>
+              <Typography variant="body2" color="text.secondary">{user?.job_title || ''}</Typography>
             </Box>
           </Box>
 
