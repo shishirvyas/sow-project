@@ -76,7 +76,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       console.log('🔐 Login attempt for:', email);
-      const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const response = await apiFetch('auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
