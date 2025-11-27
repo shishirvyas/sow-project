@@ -150,29 +150,6 @@ const Login = () => {
                 {loading ? <CircularProgress size={24} /> : 'Sign In'}
               </Button>
             </form>
-
-            <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Quick Login (Test Users)</InputLabel>
-                <Select
-                  label="Quick Login (Test Users)"
-                  defaultValue=""
-                  onChange={(e) => fillTestUser(e.target.value)}
-                >
-                  <MenuItem value="" disabled>
-                    <em>Select a test account</em>
-                  </MenuItem>
-                  {testUsers.map((user) => (
-                    <MenuItem key={user.email} value={user.email}>
-                      {user.role} - {user.email}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1, textAlign: 'center' }}>
-                All test accounts use password: password123
-              </Typography>
-            </Box>
           </CardContent>
         </Card>
       </Box>
