@@ -1,11 +1,30 @@
 import psycopg2
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Use DATABASE_URL from environment
+database_url = os.getenv('DATABASE_URL')
+if not database_url:
+    raise ValueError("DATABASE_URL not found in environment variables")
+
+# Parse the DATABASE_URL
+import re
+pattern = r'postgres(?:ql)?://([^:]+):([^@]+)@([^:]+):(\d+)/(.+?)(?:\?|$)'
+match = re.match(pattern, database_url)
+if not match:
+    raise ValueError("Invalid DATABASE_URL format")
+
+user, password, host, port, dbname = match.groups()
 
 conn = psycopg2.connect(
-    host='sow-service-sow.f.aivencloud.com',
-    port=21832,
-    user='avnadmin',
-    password='AVNS_qn2gZKOT3iF-wTMQV9j',
-    dbname='defaultdb',
+    host=host,
+    port=int(port),
+    user=user,
+    password=password,
+    dbname=dbname,
     sslmode='require'
 )
 
