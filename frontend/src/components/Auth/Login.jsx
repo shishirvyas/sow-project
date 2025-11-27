@@ -53,6 +53,7 @@ const Login = () => {
     { email: 'shishir@skope360.ai', role: 'Administrator' },
     { email: 'shilpa@skope360.ai', role: 'Administrator' },
     { email: 'malleha@skope360.ai', role: 'Administrator' },
+    { email: 'rahul@skope360.ai', role: 'Administrator' },
   ];
 
   const fillTestUser = (testEmail) => {
