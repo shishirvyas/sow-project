@@ -13,7 +13,7 @@ export default function Dashboard() {
     <MainLayout>
       <Box sx={{ mb: 3 }}>
         <Typography variant="h4" gutterBottom>
-          Welcome to SKOPE
+          Welcome to SKOPE360
         </Typography>
         <Typography variant="body1" color="text.secondary">
           AI-Powered Statement of Work (SOW) Analysis Platform
@@ -28,7 +28,7 @@ export default function Dashboard() {
               About This Platform
             </Typography>
             <Typography variant="body1" paragraph>
-              SKOPE is an intelligent document analysis platform designed to streamline the review and assessment of 
+              SKOPE360 is an intelligent document analysis platform designed to streamline the review and assessment of 
               Statement of Work (SOW) documents. Using advanced AI technology, we help organizations quickly identify 
               risks, compliance issues, and key clauses within their contractual documents.
             </Typography>

@@ -101,7 +101,7 @@ export default function Header({ onToggleDrawer, collapsed, onToggleCollapse }) 
               letterSpacing: '0.5px'
             }}
           >
-            SKOPE
+            SKOPE360
           </Typography>
         </Box>
 

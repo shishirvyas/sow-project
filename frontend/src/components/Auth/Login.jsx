@@ -48,10 +48,11 @@ const Login = () => {
   };
 
   const testUsers = [
-    { email: 'admin@skope.ai', role: 'Administrator' },
-    { email: 'manager@skope.ai', role: 'Manager' },
-    { email: 'analyst@skope.ai', role: 'Analyst' },
-    { email: 'viewer@skope.ai', role: 'Viewer' },
+    { email: 'sushas@skope360.ai', role: 'Administrator' },
+    { email: 'susmita@skope360.ai', role: 'Administrator' },
+    { email: 'shishir@skope360.ai', role: 'Administrator' },
+    { email: 'shilpa@skope360.ai', role: 'Administrator' },
+    { email: 'malleha@skope360.ai', role: 'Administrator' },
   ];
 
   const fillTestUser = (testEmail) => {
@@ -80,7 +81,7 @@ const Login = () => {
         <Card sx={{ width: '100%', boxShadow: 6, borderRadius: 2 }}>
           <CardContent sx={{ p: { xs: 3, sm: 4, md: 5 } }}>
             <Typography variant="h4" component="h1" gutterBottom align="center" fontWeight="bold">
-              Welcome to SKOPE
+              Welcome to SKOPE360
             </Typography>
             <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 4 }}>
               Sign in to access your dashboard

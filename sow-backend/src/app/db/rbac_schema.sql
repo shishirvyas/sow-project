@@ -1,5 +1,5 @@
 -- ============================================================================
--- RBAC (Role-Based Access Control) Schema for SKOPE Platform
+-- RBAC (Role-Based Access Control) Schema for SKOPE360 Platform
 -- ============================================================================
 
 -- Users table

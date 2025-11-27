@@ -77,7 +77,8 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     logger.info(f"🔐 Authentication attempt for: {email}")
     
     query = """
-        SELECT id, email, full_name, password_hash, is_active, is_verified, avatar_url
+        SELECT id, email, full_name, password_hash, is_active, is_verified, avatar_url,
+               job_title, department, years_of_experience, bio, phone, location
         FROM users
         WHERE email = %s
     """
@@ -120,10 +121,67 @@ def get_user_menu(user_id: int) -> list[dict]:
     query = """
         SELECT *
         FROM get_user_menu(%s)
-        ORDER BY display_order
     """
     
-    return execute_query(query, (user_id,))
+    menu_items = execute_query(query, (user_id,))
+    
+    # Group menu items by group_name
+    grouped_menu = []
+    groups_dict = {}
+    ungrouped_items = []
+    
+    for item in menu_items:
+        group_name = item.get('group_name')
+        
+        if group_name:
+            if group_name not in groups_dict:
+                groups_dict[group_name] = {
+                    'group_name': group_name,
+                    'group_order': item.get('group_order', 0),
+                    'group_icon': item.get('group_icon'),
+                    'items': []
+                }
+            
+            # Add item to its group
+            groups_dict[group_name]['items'].append({
+                'id': item['menu_id'],
+                'key': item['menu_key'],
+                'label': item['label'],
+                'icon': item['icon'],
+                'path': item['path'],
+                'display_order': item.get('display_order', 0)
+            })
+        else:
+            # Ungrouped items
+            ungrouped_items.append({
+                'id': item['menu_id'],
+                'key': item['menu_key'],
+                'label': item['label'],
+                'icon': item['icon'],
+                'path': item['path'],
+                'display_order': item.get('display_order', 0)
+            })
+    
+    # Convert groups_dict to sorted list
+    groups_list = sorted(groups_dict.values(), key=lambda x: x['group_order'])
+    
+    # Sort items within each group
+    for group in groups_list:
+        group['items'] = sorted(group['items'], key=lambda x: x['display_order'])
+    
+    # Filter out empty groups
+    groups_list = [g for g in groups_list if g['items']]
+    
+    # Combine grouped and ungrouped items
+    result = []
+    for group in groups_list:
+        result.append(group)
+    
+    # Add ungrouped items sorted by display_order
+    ungrouped_items = sorted(ungrouped_items, key=lambda x: x['display_order'])
+    result.extend(ungrouped_items)
+    
+    return result
 
 def get_user_roles(user_id: int) -> list[dict]:
     """Get all roles assigned to a user"""
@@ -140,7 +198,8 @@ def get_user_roles(user_id: int) -> list[dict]:
 def get_user_by_id(user_id: int) -> Optional[dict]:
     """Get user by ID"""
     query = """
-        SELECT id, email, full_name, is_active, is_verified, avatar_url, created_at, updated_at
+        SELECT id, email, full_name, is_active, is_verified, avatar_url, created_at, updated_at,
+               job_title, department, years_of_experience, bio, phone, location
         FROM users
         WHERE id = %s
     """
@@ -150,7 +209,8 @@ def get_user_by_id(user_id: int) -> Optional[dict]:
 def get_user_by_email(email: str) -> Optional[dict]:
     """Get user by email"""
     query = """
-        SELECT id, email, full_name, is_active, is_verified, avatar_url, created_at, updated_at
+        SELECT id, email, full_name, is_active, is_verified, avatar_url, created_at, updated_at,
+               job_title, department, years_of_experience, bio, phone, location
         FROM users
         WHERE email = %s
     """

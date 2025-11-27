@@ -169,7 +169,7 @@ def init_database():
 
 if __name__ == '__main__':
     print("="*60)
-    print("SKOPE Platform - Database Initialization")
+    print("SKOPE360 Platform - Database Initialization")
     print("="*60)
     print()
     

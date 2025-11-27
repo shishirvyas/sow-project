@@ -14,7 +14,7 @@ import Divider from '@mui/material/Divider'
 import { useLocation } from 'react-router-dom'
 import * as notificationsService from 'src/services/notifications'
 
-const STORAGE_KEY = 'skope_notifications'
+const STORAGE_KEY = 'skope360_notifications'
 
 function loadNotifications() {
   try {
