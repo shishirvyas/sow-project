@@ -203,3 +203,21 @@ Output: compliance_status: "missing", reason: "No warranty duration; no cost res
 CREATE INDEX IF NOT EXISTS idx_prompt_templates_clause_id ON prompt_templates(clause_id);
 CREATE INDEX IF NOT EXISTS idx_prompt_templates_active ON prompt_templates(is_active);
 CREATE INDEX IF NOT EXISTS idx_prompt_variables_prompt_id ON prompt_variables(prompt_id);
+
+-- Prompts management table for AI template administration
+CREATE TABLE IF NOT EXISTS prompts (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    prompt_text TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'Other',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES users(id),
+    version INTEGER DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category);
+CREATE INDEX IF NOT EXISTS idx_prompts_active ON prompts(is_active);
+CREATE INDEX IF NOT EXISTS idx_prompts_created_by ON prompts(created_by);

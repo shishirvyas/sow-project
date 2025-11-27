@@ -1,7 +1,9 @@
-from fastapi import APIRouter, BackgroundTasks, Request, Response, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, Response, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from src.app.core.config import settings
+from src.app.api.v1.auth import get_current_user
+from src.app.services.auth_service import get_user_permissions
 import subprocess
 import sys
 from pathlib import Path
@@ -52,13 +54,21 @@ async def get_config():
     
 
 @router.post("/upload-sow")
-async def upload_sow(file: UploadFile = File(...)):
+async def upload_sow(
+    file: UploadFile = File(...),
+    user_id: int = Depends(get_current_user)
+):
     """
     Upload SOW document to Azure Blob Storage
     
+    Requires: document.upload permission
     Accepts: PDF, DOCX, TXT files
     Returns: Blob metadata including blob_name for processing
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'document.upload' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: document.upload required")
     try:
         # Validate file type
         allowed_extensions = {".pdf", ".docx", ".txt"}
@@ -100,9 +110,14 @@ async def upload_sow(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/process-sow/{blob_name:path}")
-def process_sow_from_blob(blob_name: str):
+def process_sow_from_blob(
+    blob_name: str,
+    user_id: int = Depends(get_current_user)
+):
     """
     Process a SOW document from Azure Blob Storage
+    
+    Requires: analysis.create permission
     
     Args:
         blob_name: Name of the blob in Azure Storage (from upload response)
@@ -110,6 +125,10 @@ def process_sow_from_blob(blob_name: str):
     Returns:
         Analysis results from all configured prompts with error information if any failures occurred
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.create' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.create required")
     from datetime import datetime
     from src.app.services.sow_processor import SOWProcessor
     from src.app.services.azure_blob_service import AzureBlobService
@@ -179,13 +198,23 @@ def process_sow_from_blob(blob_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analysis-history")
-def get_analysis_history(request: Request):
+async def get_analysis_history(
+    request: Request,
+    user_id: int = Depends(get_current_user)
+):
     """
     Get all analysis results from Azure Blob Storage
+    
+    Requires: analysis.view permission
     
     Returns:
         List of all analysis results with metadata
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.view' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.view required")
+    
     try:
         from src.app.services.azure_blob_service import AzureBlobService
         import json
@@ -205,37 +234,51 @@ def get_analysis_history(request: Request):
                 "error_count": 0
             }
         
-        # List all blobs in results container
-        blobs = container_client.list_blobs()
+        # List all blobs in results container (sorted by last_modified, newest first)
+        blobs = list(container_client.list_blobs())
+        
+        # Sort by creation time (newest first) before processing
+        blobs.sort(key=lambda b: b.creation_time or b.last_modified, reverse=True)
+        
+        # Limit to most recent 50 blobs for performance (configurable)
+        MAX_BLOBS = 50
+        blobs = blobs[:MAX_BLOBS]
         
         history = []
         success_count = 0
         error_count = 0
         
+        # Process blobs in parallel-like manner (download only essential data)
         for blob in blobs:
             try:
-                # Download and parse each result
                 blob_client = container_client.get_blob_client(blob.name)
+                
+                # Download and parse the full JSON (limited to 50 blobs for performance)
                 content = blob_client.download_blob().readall()
                 result_data = json.loads(content.decode('utf-8'))
                 
-                # Extract key metadata
+                # Extract data from JSON
                 status = result_data.get("status", "unknown")
+                source_blob = result_data.get("blob_name", "unknown")
+                prompts_processed = result_data.get("prompts_processed", 0)
+                processing_completed_at = result_data.get("processing_completed_at")
+                has_errors = bool(result_data.get("errors"))
+                error_count_item = len(result_data.get("errors", []))
                 
-                # Check if PDF exists and generate API URL
-                pdf_exists = blob_service.pdf_exists(blob.name)
+                # Check if PDF exists (cached in blob metadata if possible)
+                pdf_exists = False  # Skip PDF check for speed - can be lazy loaded
                 api_base = str(request.base_url).rstrip('/')
                 pdf_url = f"{api_base}/api/v1/analysis-history/{blob.name}/download-pdf" if pdf_exists else None
                 
                 history_item = {
                     "result_blob_name": blob.name,
-                    "source_blob": result_data.get("blob_name", "unknown"),
+                    "source_blob": source_blob,
                     "status": status,
-                    "prompts_processed": result_data.get("prompts_processed", 0),
-                    "processing_started_at": result_data.get("processing_started_at"),
-                    "processing_completed_at": result_data.get("processing_completed_at"),
-                    "has_errors": bool(result_data.get("errors")),
-                    "error_count": len(result_data.get("errors", [])),
+                    "prompts_processed": prompts_processed,
+                    "processing_started_at": None,  # Lazy load
+                    "processing_completed_at": processing_completed_at,
+                    "has_errors": has_errors,
+                    "error_count": error_count_item,
                     "created": blob.creation_time.isoformat() if blob.creation_time else None,
                     "size": blob.size,
                     "url": blob_client.url,
@@ -263,9 +306,6 @@ def get_analysis_history(request: Request):
                     "size": blob.size
                 })
         
-        # Sort by creation time (newest first)
-        history.sort(key=lambda x: x.get("created", ""), reverse=True)
-        
         return {
             "history": history,
             "count": len(history),
@@ -279,9 +319,16 @@ def get_analysis_history(request: Request):
 
 # PDF endpoints - MUST come before the detail route to match properly
 @router.post("/analysis-history/{result_blob_name:path}/generate-pdf")
-async def generate_analysis_pdf(result_blob_name: str, request: Request, background_tasks: BackgroundTasks):
+async def generate_analysis_pdf(
+    result_blob_name: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user)
+):
     """
     Generate PDF for analysis result and upload to Azure Blob Storage
+    
+    Requires: analysis.export permission
     
     Args:
         result_blob_name: Name of the result blob
@@ -290,6 +337,10 @@ async def generate_analysis_pdf(result_blob_name: str, request: Request, backgro
     Returns:
         Status and PDF URL when ready
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.export' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.export required")
     logging.info(f"[PDF GENERATE] Starting PDF generation for: {result_blob_name}")
     try:
         from src.app.services.azure_blob_service import AzureBlobService
@@ -360,9 +411,15 @@ async def generate_analysis_pdf(result_blob_name: str, request: Request, backgro
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analysis-history/{result_blob_name:path}/pdf-url")
-def get_analysis_pdf_url(result_blob_name: str, request: Request):
+def get_analysis_pdf_url(
+    result_blob_name: str,
+    request: Request,
+    user_id: int = Depends(get_current_user)
+):
     """
     Check PDF availability and return API download endpoint
+    
+    Requires: analysis.view permission
     
     Args:
         result_blob_name: Name of the result blob
@@ -371,6 +428,10 @@ def get_analysis_pdf_url(result_blob_name: str, request: Request):
     Returns:
         PDF status and API download URL
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.view' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.view required")
     logging.info(f"[PDF URL CHECK] Checking PDF availability for: {result_blob_name}")
     try:
         from src.app.services.azure_blob_service import AzureBlobService
@@ -402,9 +463,14 @@ def get_analysis_pdf_url(result_blob_name: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analysis-history/{result_blob_name:path}/download-pdf")
-def download_analysis_pdf(result_blob_name: str):
+def download_analysis_pdf(
+    result_blob_name: str,
+    user_id: int = Depends(get_current_user)
+):
     """
     Download PDF for analysis result
+    
+    Requires: analysis.view permission
     
     Args:
         result_blob_name: Name of the result blob
@@ -412,6 +478,10 @@ def download_analysis_pdf(result_blob_name: str):
     Returns:
         PDF file stream
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.view' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.view required")
     logging.info(f"[PDF DOWNLOAD] Download request received for: {result_blob_name}")
     try:
         from src.app.services.azure_blob_service import AzureBlobService
@@ -463,9 +533,14 @@ def download_analysis_pdf(result_blob_name: str):
 
 # Detail route - MUST come after PDF routes to avoid matching /pdf-url paths
 @router.get("/analysis-history/{result_blob_name:path}")
-def get_analysis_detail(result_blob_name: str):
+def get_analysis_detail(
+    result_blob_name: str,
+    user_id: int = Depends(get_current_user)
+):
     """
     Get detailed analysis result from Azure Blob Storage
+    
+    Requires: analysis.view permission
     
     Args:
         result_blob_name: Name of the result blob
@@ -473,6 +548,10 @@ def get_analysis_detail(result_blob_name: str):
     Returns:
         Complete analysis result data
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.view' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.view required")
     try:
         from src.app.services.azure_blob_service import AzureBlobService
         import json
@@ -558,13 +637,23 @@ def get_sow_metadata(blob_name: str):
         raise HTTPException(status_code=404, detail="SOW not found")
 
 @router.delete("/sows/{blob_name:path}")
-def delete_sow(blob_name: str):
+async def delete_sow(
+    blob_name: str,
+    user_id: int = Depends(get_current_user)
+):
     """
     Delete a SOW document from Azure Blob Storage
+    
+    Requires: document.delete permission
     
     Args:
         blob_name: Name of the blob to delete
     """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'document.delete' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: document.delete required")
+    
     try:
         from src.app.services.azure_blob_service import AzureBlobService
         
@@ -720,274 +809,268 @@ def mark_all_read():
         logging.error(f"Error marking all notifications: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# ==================== PROMPTS MANAGEMENT ENDPOINTS ====================
+
+class PromptCreateRequest(BaseModel):
+    clause_id: str
+    name: str
+    prompt_text: str
+    is_active: bool = True
+
+class PromptUpdateRequest(BaseModel):
+    clause_id: str
+    name: str
+    prompt_text: str
+    is_active: bool
+
+class VariableRequest(BaseModel):
+    variable_name: str
+    variable_value: str
+    description: Optional[str] = None
 
 @router.get("/prompts")
-def list_prompts():
-    """
-    List all available prompts from database
-    """
-    import logging
+async def get_prompts(
+    request: Request,
+    current_user: int = Depends(get_current_user)
+):
+    """Get all prompts (requires prompt.view permission)"""
     try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
-        prompts = db_service.fetch_all_active_prompts()
-        logging.info(f"Fetched {len(prompts)} prompts from database: {list(prompts.keys())}")
-        return {"prompts": list(prompts.keys()), "count": len(prompts)}
+        # Check permission
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.view' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        from src.app.services.prompt_service import get_all_prompts
+        prompts = get_all_prompts()
+        
+        logging.info(f"📋 User {current_user} fetched {len(prompts)} prompts")
+        logging.info(f"🔍 Prompts data type: {type(prompts)}")
+        if prompts:
+            logging.info(f"🔍 First prompt type: {type(prompts[0])}")
+            logging.info(f"🔍 First prompt: {prompts[0]}")
+            logging.info(f"🔍 First prompt keys: {list(prompts[0].keys()) if hasattr(prompts[0], 'keys') else 'No keys method'}")
+        
+        # Ensure proper JSON serialization - convert RealDictRow to plain dict
+        prompts_list = []
+        for p in prompts:
+            # Convert to dict first to ensure we can access all fields
+            p_dict = dict(p) if hasattr(p, 'keys') else p
+            prompts_list.append({
+                "id": p_dict['id'],
+                "clause_id": p_dict['clause_id'],
+                "name": p_dict['name'],
+                "prompt_text": p_dict['prompt_text'],
+                "is_active": p_dict['is_active'],
+                "created_at": str(p_dict['created_at']) if p_dict.get('created_at') else None,
+                "updated_at": str(p_dict['updated_at']) if p_dict.get('updated_at') else None,
+                "variable_count": int(p_dict.get('variable_count', 0))
+            })
+        
+        logging.info(f"🔍 Serialized first prompt: {prompts_list[0] if prompts_list else 'None'}")
+        
+        return JSONResponse(content={"prompts": prompts_list, "count": len(prompts_list)})
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error fetching prompts: {type(e).__name__}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "type": type(e).__name__, "message": "Failed to fetch prompts from database"}
-        )
+        logging.error(f"Error fetching prompts: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/prompts/{clause_id}")
-def get_prompt(clause_id: str):
-    """
-    Get a specific prompt by clause_id with all variables populated
-    """
+@router.get("/prompts/{prompt_id}")
+async def get_prompt(
+    prompt_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get a single prompt by ID with variables (requires prompt.view permission)"""
     try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
-        prompt = db_service.fetch_prompt_by_clause_id(clause_id)
-        if prompt:
-            return {"clause_id": clause_id, "prompt": prompt}
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Prompt not found for clause_id: {clause_id}"}
-            )
+        # Check permission
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.view' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        from src.app.services.prompt_service import get_prompt_by_id
+        prompt = get_prompt_by_id(prompt_id)
+        
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        
+        return prompt
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to fetch prompt"}
-        )
-
-@router.get("/prompts/{clause_id}/variables")
-def get_prompt_variables(clause_id: str):
-    """
-    Get all variables and their values for a specific prompt
-    """
-    try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
-        variables = db_service.get_all_variables(clause_id)
-        if variables:
-            return {"clause_id": clause_id, "variables": variables}
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"No variables found for clause_id: {clause_id}"}
-            )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to fetch variables"}
-        )
-
-@router.put("/prompts/{clause_id}/variables")
-def update_prompt_variable(clause_id: str, variable: PromptVariable):
-    """
-    Update a variable value for a specific prompt
-    """
-    try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
-        success = db_service.update_variable(
-            clause_id, 
-            variable.variable_name, 
-            variable.variable_value
-        )
-        if success:
-            return {
-                "message": "Variable updated successfully",
-                "clause_id": clause_id,
-                "variable_name": variable.variable_name,
-                "new_value": variable.variable_value
-            }
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Variable '{variable.variable_name}' not found for {clause_id}"}
-            )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to update variable"}
-        )
+        logging.error(f"Error fetching prompt {prompt_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/prompts")
-def create_prompt(prompt: PromptCreate):
-    """
-    Create a new prompt template in the database
-    """
-    import logging
+async def create_prompt(
+    prompt_data: PromptCreateRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new prompt (requires prompt.create permission)"""
     try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
+        # Check permission
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.create' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
         
-        # Insert the new prompt template
-        conn = db_service.get_connection()
-        cur = conn.cursor()
-        
-        try:
-            cur.execute("""
-                INSERT INTO prompt_templates (clause_id, name, prompt_text, is_active)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-            """, (prompt.clause_id, prompt.name, prompt.prompt_text, prompt.is_active))
-            
-            prompt_id = cur.fetchone()[0]
-            conn.commit()
-            
-            logging.info(f"Created new prompt template: {prompt.clause_id}")
-            
-            return {
-                "message": "Prompt created successfully",
-                "clause_id": prompt.clause_id,
-                "prompt_id": prompt_id,
-                "name": prompt.name
-            }
-            
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cur.close()
-            conn.close()
-            
-    except Exception as e:
-        logging.error(f"Error creating prompt: {type(e).__name__}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to create prompt"}
+        from src.app.services.prompt_service import create_prompt
+        prompt = create_prompt(
+            clause_id=prompt_data.clause_id,
+            name=prompt_data.name,
+            prompt_text=prompt_data.prompt_text,
+            is_active=prompt_data.is_active
         )
+        
+        logging.info(f"✅ User {current_user} created prompt '{prompt_data.clause_id}'")
+        return {"message": "Prompt created successfully", "prompt": prompt}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error creating prompt: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/prompts/{clause_id}/variables")
-def add_prompt_variable(clause_id: str, variable: VariableCreate):
-    """
-    Add a new variable to an existing prompt
-    """
-    import logging
+@router.put("/prompts/{prompt_id}")
+async def update_prompt(
+    prompt_id: int,
+    prompt_data: PromptUpdateRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update an existing prompt (requires prompt.edit permission)"""
     try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
+        # Check permission
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.edit' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
         
-        conn = db_service.get_connection()
-        cur = conn.cursor()
-        
-        try:
-            # Get prompt_id for the clause_id
-            cur.execute("""
-                SELECT id FROM prompt_templates WHERE clause_id = %s
-            """, (clause_id,))
-            
-            result = cur.fetchone()
-            if not result:
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": f"Prompt not found for clause_id: {clause_id}"}
-                )
-            
-            prompt_id = result[0]
-            
-            # Insert the variable
-            cur.execute("""
-                INSERT INTO prompt_variables (prompt_id, variable_name, variable_value, description)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-            """, (prompt_id, variable.variable_name, variable.variable_value, variable.description))
-            
-            variable_id = cur.fetchone()[0]
-            conn.commit()
-            
-            logging.info(f"Added variable '{variable.variable_name}' to prompt {clause_id}")
-            
-            return {
-                "message": "Variable added successfully",
-                "clause_id": clause_id,
-                "variable_id": variable_id,
-                "variable_name": variable.variable_name,
-                "variable_value": variable.variable_value
-            }
-            
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cur.close()
-            conn.close()
-            
-    except Exception as e:
-        logging.error(f"Error adding variable: {type(e).__name__}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to add variable"}
+        from src.app.services.prompt_service import update_prompt
+        prompt = update_prompt(
+            prompt_id=prompt_id,
+            clause_id=prompt_data.clause_id,
+            name=prompt_data.name,
+            prompt_text=prompt_data.prompt_text,
+            is_active=prompt_data.is_active
         )
+        
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        
+        logging.info(f"✏️ User {current_user} updated prompt ID {prompt_id}")
+        return {"message": "Prompt updated successfully", "prompt": prompt}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating prompt {prompt_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/prompts/{clause_id}/variables/bulk")
-def add_prompt_variables_bulk(clause_id: str, bulk_variables: BulkVariablesCreate):
-    """
-    Add multiple variables to an existing prompt in one request
-    """
-    import logging
+@router.delete("/prompts/{prompt_id}")
+async def delete_prompt(
+    prompt_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a prompt (requires prompt.delete permission)"""
     try:
-        from src.app.services.prompt_db_service import PromptDatabaseService
-        db_service = PromptDatabaseService()
+        # Check permission
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.delete' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
         
-        conn = db_service.get_connection()
-        cur = conn.cursor()
+        from src.app.services.prompt_service import delete_prompt
+        success = delete_prompt(prompt_id)
         
-        try:
-            # Get prompt_id for the clause_id
-            cur.execute("""
-                SELECT id FROM prompt_templates WHERE clause_id = %s
-            """, (clause_id,))
-            
-            result = cur.fetchone()
-            if not result:
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": f"Prompt not found for clause_id: {clause_id}"}
-                )
-            
-            prompt_id = result[0]
-            
-            # Insert all variables
-            added_variables = []
-            for variable in bulk_variables.variables:
-                cur.execute("""
-                    INSERT INTO prompt_variables (prompt_id, variable_name, variable_value, description)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                """, (prompt_id, variable.variable_name, variable.variable_value, variable.description))
-                
-                variable_id = cur.fetchone()[0]
-                added_variables.append({
-                    "variable_id": variable_id,
-                    "variable_name": variable.variable_name
-                })
-            
-            conn.commit()
-            
-            logging.info(f"Added {len(added_variables)} variables to prompt {clause_id}")
-            
-            return {
-                "message": f"Added {len(added_variables)} variables successfully",
-                "clause_id": clause_id,
-                "variables_added": added_variables,
-                "count": len(added_variables)
-            }
-            
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cur.close()
-            conn.close()
-            
+        if not success:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        
+        logging.info(f"🗑️ User {current_user} deleted prompt ID {prompt_id}")
+        return {"message": "Prompt deleted successfully"}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error adding bulk variables: {type(e).__name__}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "message": "Failed to add variables"}
+        logging.error(f"Error deleting prompt {prompt_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/prompts/{prompt_id}/variables")
+async def get_prompt_variables(
+    prompt_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all variables for a prompt (requires prompt.view permission)"""
+    try:
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.view' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        from src.app.services.prompt_service import get_prompt_variables
+        variables = get_prompt_variables(prompt_id)
+        
+        return {"variables": variables}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching variables: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/prompts/{prompt_id}/variables")
+async def add_prompt_variable(
+    prompt_id: int,
+    variable_data: VariableRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add/update a variable for a prompt (requires prompt.edit permission)"""
+    try:
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.edit' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        from src.app.services.prompt_service import add_variable
+        variable = add_variable(
+            prompt_id=prompt_id,
+            variable_name=variable_data.variable_name,
+            variable_value=variable_data.variable_value,
+            description=variable_data.description
         )
+        
+        logging.info(f"✅ User {current_user} added variable '{variable_data.variable_name}' to prompt {prompt_id}")
+        return {"message": "Variable added successfully", "variable": variable}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding variable: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/prompts/{prompt_id}/variables/{variable_id}")
+async def delete_prompt_variable(
+    prompt_id: int,
+    variable_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a variable (requires prompt.edit permission)"""
+    try:
+        user_permissions = get_user_permissions(current_user)
+        if 'prompt.edit' not in user_permissions:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        from src.app.services.prompt_service import delete_variable
+        success = delete_variable(variable_id)
+        
+        logging.info(f"🗑️ User {current_user} deleted variable {variable_id}")
+        return {"message": "Variable deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting variable: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -26,7 +26,7 @@ export default function AccountPopover() {
   const [profile, setProfile] = React.useState(null)
 
   React.useEffect(() => {
-    apiFetch('api/v1/profile')
+    apiFetch('profile')
       .then(res => res.json())
       .then(data => setProfile(data))
       .catch(err => console.error('Failed to fetch profile:', err))

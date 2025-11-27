@@ -102,7 +102,7 @@ export default function NotificationsPopover() {
   const fetchTodaysAnalyses = React.useCallback(async () => {
     setLoading(true)
     try {
-      const response = await apiFetch('api/v1/analysis-history')
+      const response = await apiFetch('analysis-history')
       const { history } = response
       
       console.log('📊 Fetching today\'s analyses. Total history items:', history.length)
@@ -147,10 +147,10 @@ export default function NotificationsPopover() {
     }
   }, [viewedIds])
 
-  // Fetch on mount and refresh every 30 seconds
+  // Fetch on mount and refresh every 60 seconds (reduced from 30s to minimize server load)
   React.useEffect(() => {
     fetchTodaysAnalyses()
-    const interval = setInterval(fetchTodaysAnalyses, 30000)
+    const interval = setInterval(fetchTodaysAnalyses, 60000)
     return () => clearInterval(interval)
   }, [fetchTodaysAnalyses])
 
