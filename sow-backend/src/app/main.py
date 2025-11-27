@@ -44,12 +44,18 @@ app = FastAPI(title="My Python Service")
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 logging.info(f"Configuring CORS with origins: {cors_origins}")
 
+# Parse CORS methods and headers
+cors_methods = ["*"] if settings.CORS_ALLOW_METHODS == "*" else [m.strip() for m in settings.CORS_ALLOW_METHODS.split(",")]
+cors_headers = ["*"] if settings.CORS_ALLOW_HEADERS == "*" else [h.strip() for h in settings.CORS_ALLOW_HEADERS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-    allow_methods=[settings.CORS_ALLOW_METHODS] if settings.CORS_ALLOW_METHODS != "*" else ["*"],
-    allow_headers=[settings.CORS_ALLOW_HEADERS] if settings.CORS_ALLOW_HEADERS != "*" else ["*"],
+    allow_methods=cors_methods,
+    allow_headers=cors_headers,
+    expose_headers=["*"],  # Allow frontend to read all response headers
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 app.include_router(v1_router, prefix="/api/v1")
