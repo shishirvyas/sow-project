@@ -1,47 +1,41 @@
-name: Deploy Python FastAPI to Azure Web App
+name: Deploy sow-backend to Azure Web App
 
 on:
   push:
     branches:
-      - main    # change to the branch you push from, e.g. 'backend' or 'develop'
+      - main    # change to the branch you use to deploy
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.14'  # change to your runtime
+          python-version: '3.14'   # match your App Service runtime
 
       - name: Install dependencies
-        working-directory: sow-backend        # <--- YOUR BACKEND FOLDER
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run tests (optional)
         working-directory: sow-backend
         run: |
-          # add tests here if you have them (pytest etc.)
-          echo "Skipping tests"
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo "No requirements.txt found"; fi
 
-      - name: Zip package
+      - name: Run optional tests
+        working-directory: sow-backend
         run: |
-          cd backend
-          zip -r ../package.zip . --exclude=.git\* 
-      
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-          
+          echo "Skipping tests"   # replace with pytest or other test runner if you have tests
+
+      - name: Create package.zip
+        run: |
+          cd sow-backend
+          zip -r ../sow-backend-package.zip . --exclude=.git\* 
+
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@v4
         with:
-          app-name: 'sow-backend'          # replace
+          app-name: 'sow-backend'                      # your App Service name
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          package: package.zip
+          package: sow-backend-package.zip
