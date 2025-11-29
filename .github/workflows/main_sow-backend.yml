@@ -24,7 +24,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests (optional)
-        working-directory: backend
+        working-directory: sow-backend
         run: |
           # add tests here if you have them (pytest etc.)
           echo "Skipping tests"
