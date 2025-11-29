@@ -34,7 +34,7 @@ jobs:
           zip -r ../sow-backend-package.zip . --exclude=.git\* 
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v4
+        uses: azure/webapps-deploy@v3
         with:
           app-name: 'sow-backend'                      # your App Service name
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
