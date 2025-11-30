@@ -32,6 +32,11 @@ jobs:
         run: |
           cd sow-backend
           zip -r ../sow-backend-package.zip . --exclude=.git\* 
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
