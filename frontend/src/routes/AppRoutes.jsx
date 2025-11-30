@@ -19,6 +19,7 @@ const Users = lazy(() => import('src/pages/admin/Users'))
 const Roles = lazy(() => import('src/pages/admin/Roles'))
 const AuditLogs = lazy(() => import('src/pages/admin/AuditLogs'))
 const PermissionsGraph = lazy(() => import('src/pages/admin/PermissionsGraph'))
+const Permissions = lazy(() => import('src/pages/admin/Permissions'))
 const Prompts = lazy(() => import('src/pages/Prompts'))
 const PromptsDebug = lazy(() => import('src/pages/PromptsDebug'))
 
@@ -125,6 +126,14 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="role.view">
               <Roles />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/permissions" 
+          element={
+            <ProtectedRoute requiredPermission="role.view">
+              <Permissions />
             </ProtectedRoute>
           } 
         />
