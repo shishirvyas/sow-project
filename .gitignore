@@ -93,8 +93,11 @@ frontend/.env
 coverage.xml
 .cache
 htmlcov/
-
+ 
 # --- Misc ---
 .idea/
 *.swp
 *~
+
+# Local DB test script (do not commit)
+sow-backend/tests/db-test.py

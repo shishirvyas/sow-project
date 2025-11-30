@@ -1,14 +1,325 @@
 # Azure Deployment Guide for SOW Project
 
-This guide will help you deploy your SOW analysis application to Azure using your free subscription.
+This guide will help you deploy your SOW analysis application to Azure using your existing resource group `rg-sow-project`.
 
 ## 🎯 Architecture Overview
 
 Your application consists of:
 1. **Backend**: Python FastAPI application (sow-backend)
 2. **Frontend**: React + Vite application (frontend)
-3. **Database**: PostgreSQL (currently on Aiven)
+3. **Database**: PostgreSQL (currently on Aiven, will migrate to Azure)
 4. **Storage**: Azure Blob Storage (already configured)
+
+## 📋 Your Azure Setup
+
+- **Resource Group**: `rg-sow-project` (already created ✅)
+- **Region**: East US (or your selected region)
+- **Deployment Method**: Azure Portal (Web UI)
+
+## 🚀 Azure Portal Deployment Steps
+
+### Step 1: Create PostgreSQL Database
+
+1. **Login to Azure Portal**: https://portal.azure.com
+2. **Navigate to your Resource Group**:
+   - Search for "Resource groups" in top search bar
+   - Click on **`rg-sow-project`**
+3. **Create PostgreSQL Server**:
+   - Click **"+ Create"** at the top
+   - Search for **"Azure Database for PostgreSQL Flexible Server"**
+   - Click **"Create"**
+   
+4. **Configure Database**:
+   - **Resource group**: `rg-sow-project`
+   - **Server name**: `sow-db-server` (or add suffix for uniqueness)
+   - **Region**: Same as your resource group
+   - **PostgreSQL version**: `14` or `15`
+   - **Workload type**: Development (cheaper) or Production
+   - **Compute + Storage**: 
+     - Click "Configure server"
+     - Tier: **Burstable** 
+     - Compute: **B1ms** (1 vCore, 2 GB)
+     - Storage: **32 GB**
+   - **Authentication**:
+     - Admin username: `sowadmin`
+     - Password: [Create strong password - SAVE THIS!]
+   - **Networking**:
+     - Connectivity: **Public access**
+     - ✅ "Allow public access from any Azure service"
+     - ✅ "Add current client IP address"
+   - Click **"Review + create"** → **"Create"**
+
+5. **Create Database**:
+   - Wait 5-10 minutes for deployment
+   - Click **"Go to resource"**
+   - Left menu → **"Databases"** → **"+ Add"**
+   - Database name: `sowdb`
+   - Click **"Save"**
+
+**📝 Save Connection Details**:
+```
+Server: sow-db-server.postgres.database.azure.com
+Username: sowadmin
+Password: [your password]
+Database: sowdb
+Connection String: postgresql://sowadmin:[PASSWORD]@sow-db-server.postgres.database.azure.com:5432/sowdb?sslmode=require
+```
+
+---
+
+### Step 2: Create Storage Account (if not exists)
+
+1. In **`rg-sow-project`** resource group
+2. Click **"+ Create"** → Search **"Storage account"**
+3. **Configure**:
+   - **Storage account name**: `sowstorage[random]` (lowercase, no spaces)
+   - **Region**: Same as resource group
+   - **Performance**: Standard
+   - **Redundancy**: LRS (cheapest)
+4. Click **"Review + create"** → **"Create"**
+5. After deployment:
+   - Go to storage account
+   - Left menu → **"Containers"** → **"+ Container"**
+   - Name: `sow-output`
+   - Public access: **Blob**
+   - Click **"Create"**
+6. **Get Connection String**:
+   - Left menu → **"Access keys"**
+   - Copy **"Connection string"** from key1
+
+**📝 Save**:
+```
+Storage Account: sowstorage[numbers]
+Container: sow-output
+Connection String: [copy full string]
+```
+
+---
+
+### Step 3: Setup Database Schema & Users
+
+**On your local machine (PowerShell)**:
+
+```powershell
+cd C:\projects\sow-project\sow-backend
+
+# Install required package
+pip install psycopg2-binary
+
+# Set your Azure database URL (replace [PASSWORD] with your actual password)
+$env:DATABASE_URL="postgresql://sowadmin:[PASSWORD]@sow-db-server.postgres.database.azure.com:5432/sowdb?sslmode=require"
+
+# Run database setup script
+python -c "
+import psycopg2
+import os
+
+conn = psycopg2.connect(os.getenv('DATABASE_URL'))
+cursor = conn.cursor()
+
+# Create schema
+with open('src/app/db/rbac_schema.sql', 'r', encoding='utf-8') as f:
+    cursor.execute(f.read())
+    print('✅ RBAC schema created')
+
+# Run migrations
+migrations = [
+    'src/app/db/migrations/add_menu_groups.sql',
+    'src/app/db/migrations/add_user_profiles.sql',
+    'src/app/db/migrations/update_user_emails.sql',
+    'src/app/db/migrations/rebrand_to_skope360.sql',
+    'src/app/db/migrations/add_rahul_user.sql'
+]
+
+for migration in migrations:
+    try:
+        with open(migration, 'r', encoding='utf-8') as f:
+            cursor.execute(f.read())
+        print(f'✅ {migration}')
+    except Exception as e:
+        print(f'⚠️ {migration}: {e}')
+
+conn.commit()
+cursor.close()
+conn.close()
+print('\n✅ Database setup complete!')
+"
+```
+
+---
+
+### Step 4: Deploy Backend (App Service)
+
+1. In **`rg-sow-project`** resource group
+2. Click **"+ Create"** → Search **"Web App"**
+3. **Configure**:
+   - **Name**: `sow-backend-[yourname]` (must be globally unique)
+   - **Publish**: Code
+   - **Runtime**: Python 3.11
+   - **Operating System**: Linux
+   - **Region**: Same as resource group
+   - **Pricing Plan**: 
+     - Click "Create new"
+     - Name: `sow-plan`
+     - Tier: **F1 (Free)** or **B1 (Basic ~$13/month)** for better performance
+4. Click **"Review + create"** → **"Create"**
+
+5. **Configure Environment Variables**:
+   - Go to your App Service
+   - Left menu → **"Configuration"** → **"Application settings"**
+   - Add these settings (click "+ New application setting" for each):
+
+   ```
+   ENV = production
+   DATABASE_URL = postgresql://sowadmin:[PASSWORD]@sow-db-server.postgres.database.azure.com:5432/sowdb?sslmode=require
+   AZURE_STORAGE_CONNECTION_STRING = [Your storage connection string]
+   AZURE_CONTAINER_NAME = sow-output
+   OPENAI_API_KEY = [Your OpenAI key]
+   GROQ_API_KEY = [Your Groq key if available]
+   JWT_SECRET_KEY = [Generate random: https://www.uuidgenerator.net/]
+   CORS_ORIGINS = *
+   CALL_LLM = true
+   USE_PROMPT_DATABASE = true
+   ```
+   - Click **"Save"** at top
+
+6. **Set Startup Command**:
+   - Still in **"Configuration"** → **"General settings"** tab
+   - **Startup Command**: 
+     ```
+     gunicorn src.app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120
+     ```
+   - Click **"Save"**
+
+7. **Deploy Code** (Choose one method):
+
+   **Method A: VS Code Azure Extension** (Recommended):
+   - Install "Azure App Service" extension in VS Code
+   - Sign in to Azure
+   - View → Command Palette → "Azure App Service: Deploy to Web App"
+   - Select `sow-backend` folder
+   - Select your `sow-backend-[name]` app
+
+   **Method B: Manual ZIP Upload**:
+   ```powershell
+   cd C:\projects\sow-project\sow-backend
+   
+   # Create zip (exclude virtual env and cache)
+   $files = @('src', 'requirements.txt', 'Procfile')
+   Compress-Archive -Path $files -DestinationPath deploy.zip -Force
+   ```
+   - In Azure Portal → App Service → Left menu → **"Deployment Center"**
+   - Select **"Local Git/ZIP Deploy"**
+   - Or: **"Advanced Tools"** → **"Go"** (Kudu) → **"Tools"** → **"Zip Push Deploy"** → Upload `deploy.zip`
+
+8. **Verify Backend**:
+   - URL: `https://sow-backend-[yourname].azurewebsites.net/health`
+   - Should return: `{"status": "healthy"}`
+
+---
+
+### Step 5: Deploy Frontend
+
+**Build Frontend First**:
+
+```powershell
+cd C:\projects\sow-project\frontend
+
+# Update API URL - create/edit src/config/api.js
+@"
+const API_BASE_URL = 'https://sow-backend-[yourname].azurewebsites.net';
+export { API_BASE_URL };
+"@ | Out-File -FilePath src/config/api.js -Encoding UTF8
+
+# Build
+npm install
+npm run build
+```
+
+**Deploy to Azure Storage (Static Website)**:
+
+1. Go to your **Storage Account** in `rg-sow-project`
+2. Left menu → **"Static website"**
+3. Click **"Enabled"**
+   - Index document: `index.html`
+   - Error document: `index.html`
+4. Click **"Save"**
+5. Note the **Primary endpoint** URL
+6. Left menu → **"Storage Browser"** → **"Blob containers"** → **"$web"**
+7. Click **"Upload"** button
+8. Upload ALL files from `C:\projects\sow-project\frontend\dist` folder
+
+**Your Frontend URL**: `https://[storage-account].z13.web.core.windows.net`
+
+**Alternative: Static Web App**:
+1. In `rg-sow-project` → **"+ Create"** → Search **"Static Web App"**
+2. Name: `sow-frontend`
+3. Plan: Free
+4. Deployment: Other
+5. After creation, use Azure CLI or VS Code to deploy `dist` folder
+
+---
+
+### Step 6: Configure CORS
+
+1. Go to your **App Service** (backend)
+2. Left menu → **"CORS"**
+3. Add allowed origins:
+   - Your storage static website URL
+   - Or use `*` for testing
+4. Click **"Save"**
+
+---
+
+### Step 7: Test Application
+
+1. Open your frontend URL
+2. Login with: `rahul@skope360.ai` / `password123`
+3. Test SOW analysis
+
+---
+
+## 📋 Quick Reference - Your Resources
+
+| Resource | Name | URL/Connection |
+|----------|------|----------------|
+| Resource Group | `rg-sow-project` | - |
+| PostgreSQL | `sow-db-server` | `sow-db-server.postgres.database.azure.com` |
+| Storage Account | `sowstorage[xxx]` | - |
+| Backend App Service | `sow-backend-[xxx]` | `https://sow-backend-[xxx].azurewebsites.net` |
+| Frontend | Storage or Static Web App | `https://[xxx].z13.web.core.windows.net` |
+
+---
+
+## 🐛 Troubleshooting
+
+### Backend Issues
+1. **App Service** → **"Log stream"** - view real-time logs
+2. Check **"Configuration"** - ensure all environment variables are set
+3. **PostgreSQL** → **"Networking"** - ensure firewall allows connections
+
+### Database Connection
+- PostgreSQL → **"Networking"** → **"Firewall rules"** → Add your IP
+- Test connection: `psql "postgresql://sowadmin:[PASSWORD]@sow-db-server.postgres.database.azure.com:5432/sowdb?sslmode=require"`
+
+### Frontend Issues
+- Check browser console for API errors
+- Verify CORS is configured on backend
+- Ensure API URL is correct in frontend config
+
+---
+
+## 💰 Estimated Monthly Cost
+
+Using Free/Basic Tiers:
+- App Service F1: **Free** (limited)
+- App Service B1: **~$13/month**
+- PostgreSQL B1ms: **~$12/month**
+- Storage: **~$0.50/month**
+
+**Total**: ~$12-26/month (depending on App Service tier)
+
+---
 
 ## 📋 Prerequisites
 
