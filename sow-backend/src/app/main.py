@@ -63,6 +63,40 @@ app.include_router(profile_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 
+
+# Lifecycle events for cache
+@app.on_event("startup")
+async def startup_event():
+    """Initialize in-process cache and pre-load reference data."""
+    from .core.hybrid_cache import InProcessCache
+    InProcessCache.initialize()
+    
+    # Pre-load frequently accessed reference data
+    InProcessCache.warmup()
+    
+    logging.info("Application startup complete")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close cache on application shutdown."""
+    from .core.hybrid_cache import InProcessCache
+    InProcessCache.close()
+    logging.info("Application shutdown complete")
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "env": settings.ENV}
+    """Health check endpoint with cache status."""
+    from .core.hybrid_cache import cache_stats
+    
+    stats = cache_stats()
+    
+    return {
+        "status": "ok",
+        "env": settings.ENV,
+        "cache": {
+            "type": "in-process",
+            "stats": stats
+        }
+    }

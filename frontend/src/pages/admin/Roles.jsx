@@ -42,6 +42,7 @@ export default function Roles() {
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
@@ -168,11 +169,22 @@ export default function Roles() {
 
   const handleAssignPermissions = async () => {
     try {
-      await apiFetch(`/admin/roles/${selectedRole.role_id}/permissions`, {
+      setSaving(true);
+      setError('');
+      
+      const response = await apiFetch(`/admin/roles/${selectedRole.role_id}/permissions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permission_ids: selectedPermissions })
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = errorData.detail?.message || errorData.detail || 'Failed to assign permissions';
+        setError(errorMessage);
+        return;
+      }
+      
       setSuccess('Permissions assigned successfully');
       setPermissionModalOpen(false);
       setSelectedRole(null);
@@ -180,6 +192,8 @@ export default function Roles() {
       loadRoles();
     } catch (err) {
       setError('Failed to assign permissions: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -480,9 +494,16 @@ export default function Roles() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPermissionModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleAssignPermissions} variant="contained">
-            Save Permissions
+          <Button onClick={() => setPermissionModalOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleAssignPermissions} 
+            variant="contained"
+            disabled={saving}
+            startIcon={saving ? <CircularProgress size={20} /> : null}
+          >
+            {saving ? 'Saving...' : 'Save Permissions'}
           </Button>
         </DialogActions>
       </Dialog>

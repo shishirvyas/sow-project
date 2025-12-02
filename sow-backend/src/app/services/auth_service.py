@@ -106,6 +106,16 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 def get_user_permissions(user_id: int) -> list[str]:
     """Get all permission codes for a user"""
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Try cache first
+    cache_key = f"user_permissions:{user_id}"
+    cached_permissions = InProcessCache.get(cache_key, category="permissions")
+    if cached_permissions is not None:
+        logger.debug(f"Returning permissions from cache for user {user_id}")
+        return cached_permissions
+    
+    # Cache miss - fetch from database
     query = """
         SELECT DISTINCT permission_code
         FROM user_permissions_view
@@ -114,10 +124,25 @@ def get_user_permissions(user_id: int) -> list[str]:
     """
     
     results = execute_query(query, (user_id,))
-    return [row['permission_code'] for row in results]
+    permissions = [row['permission_code'] for row in results]
+    
+    # Cache the result
+    InProcessCache.set(cache_key, permissions, category="permissions")
+    logger.debug(f"Cached {len(permissions)} permissions for user {user_id}")
+    
+    return permissions
 
 def get_user_menu(user_id: int) -> list[dict]:
     """Get menu items accessible to a user based on their permissions"""
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Try cache first
+    cache_key = f"user_menu:{user_id}"
+    cached_menu = InProcessCache.get(cache_key, category="menus")
+    if cached_menu is not None:
+        logger.debug(f"Returning menu from cache for user {user_id}")
+        return cached_menu
+    
     query = """
         SELECT *
         FROM get_user_menu(%s)
@@ -180,6 +205,10 @@ def get_user_menu(user_id: int) -> list[dict]:
     # Add ungrouped items sorted by display_order
     ungrouped_items = sorted(ungrouped_items, key=lambda x: x['display_order'])
     result.extend(ungrouped_items)
+    
+    # Cache the result (15 min TTL)
+    InProcessCache.set(cache_key, result, category="menus")
+    logger.debug(f"Cached menu for user {user_id} ({len(result)} items)")
     
     return result
 
