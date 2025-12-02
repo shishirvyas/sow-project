@@ -52,6 +52,17 @@ class AssignPermissionsRequest(BaseModel):
 
 # ==================== USER MANAGEMENT ====================
 
+@router.get("/debug/my-permissions")
+def get_my_permissions(user_id: int = Depends(get_current_user)):
+    """Debug endpoint to check current user's permissions"""
+    permissions = get_user_permissions(user_id)
+    return {
+        "user_id": user_id,
+        "permissions": permissions,
+        "has_role_assign": "role.assign" in permissions
+    }
+
+
 @router.get("/users")
 def get_users(
     include_deleted: bool = False,
@@ -269,17 +280,22 @@ def assign_user_roles(
     """
     Assign roles to a user.
     
-    Requires: role.assign permission
+    Requires: user.assign_roles permission
     """
     # Check permission
     permissions = get_user_permissions(user_id)
-    if 'role.assign' not in permissions:
+    if 'user.assign_roles' not in permissions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied: role.assign required"
+            detail="Permission denied: user.assign_roles required"
         )
     
     try:
+        # Validate request
+        if not request.role_ids:
+            # Allow empty list to remove all roles
+            pass
+        
         admin_service.assign_user_roles(target_user_id, request.role_ids)
         
         # Create audit log
@@ -292,12 +308,46 @@ def assign_user_roles(
             ip_address=req.client.host if req.client else None
         )
         
-        return {"message": "Roles assigned successfully"}
+        # Fetch updated user data with roles
+        updated_user = admin_service.get_user_by_id(target_user_id)
         
-    except Exception as e:
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {target_user_id} not found"
+            )
+        
+        return {
+            "message": "Roles assigned successfully",
+            "user": updated_user
+        }
+        
+    except ValueError as e:
+        # Validation errors (invalid user/role IDs)
+        error_msg = str(e)
+        logger.error(f"❌ Validation error assigning roles to user {target_user_id}: {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to assign roles: {str(e)}"
+            detail={
+                "error": "Validation Error",
+                "message": error_msg,
+                "user_id": target_user_id
+            }
+        )
+    except HTTPException as he:
+        # Re-raise HTTP exceptions (don't catch and re-wrap)
+        raise he
+    except Exception as e:
+        # Unexpected errors
+        error_msg = str(e)
+        logger.error(f"❌ Unexpected error assigning roles to user {target_user_id}: {error_msg}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "Internal Server Error",
+                "message": f"Failed to assign roles: {error_msg}",
+                "user_id": target_user_id
+            }
         )
 
 
@@ -506,6 +556,10 @@ def assign_role_permissions(
     
     Requires: role.edit permission
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"=== Assign permissions endpoint called: role_id={role_id}, permission_ids={request.permission_ids} ===")
+    
     # Check permission
     permissions = get_user_permissions(user_id)
     if 'role.edit' not in permissions:
@@ -516,6 +570,10 @@ def assign_role_permissions(
         )
     
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Assigning permissions to role {role_id}: {request.permission_ids}")
+        
         admin_service.assign_role_permissions(role_id, request.permission_ids)
         
         # Create audit log
@@ -528,12 +586,47 @@ def assign_role_permissions(
             ip_address=req.client.host if req.client else None
         )
         
-        return {"message": "Permissions assigned successfully"}
+        # Fetch updated role data with permissions
+        roles = admin_service.get_all_roles()
+        updated_role = next((r for r in roles if r['role_id'] == role_id), None)
         
-    except Exception as e:
+        if not updated_role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Role {role_id} not found"
+            )
+        
+        return {
+            "message": "Permissions assigned successfully",
+            "role": updated_role
+        }
+        
+    except ValueError as e:
+        # Validation errors
+        error_msg = str(e)
+        logger.error(f"❌ Validation error assigning permissions to role {role_id}: {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to assign permissions: {str(e)}"
+            detail={
+                "error": "Validation Error",
+                "message": error_msg,
+                "role_id": role_id
+            }
+        )
+    except HTTPException as he:
+        # Re-raise HTTP exceptions (don't catch and re-wrap)
+        raise he
+    except Exception as e:
+        # Unexpected errors
+        error_msg = str(e)
+        logger.error(f"❌ Unexpected error assigning permissions to role {role_id}: {error_msg}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "Internal Server Error",
+                "message": f"Failed to assign permissions: {error_msg}",
+                "role_id": role_id
+            }
         )
 
 

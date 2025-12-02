@@ -2,10 +2,13 @@
 Admin Service
 Handles user management, role management, and audit log operations.
 """
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from src.app.db.client import get_db_connection, get_db_connection_dict, execute_query, execute_update
 from src.app.services.auth_service import get_password_hash
+
+logger = logging.getLogger(__name__)
 
 
 # ==================== USER MANAGEMENT ====================
@@ -20,6 +23,15 @@ def get_all_users(include_deleted: bool = False) -> List[Dict[str, Any]]:
     Returns:
         List of user dictionaries with roles
     """
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Try cache first (cache active users only)
+    if not include_deleted:
+        cached_users = InProcessCache.get("all_users_active", category="general")
+        if cached_users is not None:
+            logger.debug("Returning active users from cache")
+            return cached_users
+    
     conn = get_db_connection_dict()
     try:
         cursor = conn.cursor()
@@ -57,6 +69,12 @@ def get_all_users(include_deleted: bool = False) -> List[Dict[str, Any]]:
         
         cursor.execute(query)
         users = cursor.fetchall()
+        
+        # Cache active users list (5 min TTL)
+        if not include_deleted:
+            InProcessCache.set("all_users_active", users, category="general")
+            logger.debug(f"Cached {len(users)} active users")
+        
         return users
         
     finally:
@@ -120,13 +138,13 @@ def create_user(email: str, full_name: str, password: str, is_active: bool = Tru
     query = """
         INSERT INTO users (email, full_name, password_hash, is_active, created_at)
         VALUES (%s, %s, %s, %s, %s)
-        RETURNING user_id, email, full_name, is_active, created_at
+        RETURNING id as user_id, email, full_name, is_active, created_at
     """
     
-    result = execute_update(
+    result = execute_query(
         query,
         (email, full_name, hashed_password, is_active, datetime.utcnow()),
-        return_dict=True
+        fetch_one=True
     )
     
     return result
@@ -180,11 +198,11 @@ def update_user(
     query = f"""
         UPDATE users
         SET {', '.join(updates)}
-        WHERE user_id = %s
-        RETURNING user_id, email, full_name, is_active, created_at, last_login
+        WHERE id = %s
+        RETURNING id as user_id, email, full_name, is_active, created_at, last_login_at as last_login
     """
     
-    result = execute_update(query, tuple(params), return_dict=True)
+    result = execute_query(query, tuple(params), fetch_one=True)
     return result
 
 
@@ -213,13 +231,44 @@ def assign_user_roles(user_id: int, role_ids: List[int]) -> bool:
         
     Returns:
         True if successful
+        
+    Raises:
+        ValueError: If user_id is invalid or any role_id doesn't exist
+        Exception: For database errors
     """
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Validate user exists
+    user_check = execute_query(
+        "SELECT id FROM users WHERE id = %s AND is_active = TRUE",
+        (user_id,),
+        fetch_one=True
+    )
+    if not user_check:
+        logger.error(f"Cannot assign roles: User {user_id} not found or inactive")
+        raise ValueError(f"User {user_id} not found or inactive")
+    
+    # Validate all role_ids exist
+    if role_ids:
+        role_check = execute_query(
+            "SELECT id FROM roles WHERE id = ANY(%s)",
+            (role_ids,),
+            fetch_all=True
+        )
+        valid_role_ids = [r['id'] for r in role_check]
+        invalid_roles = set(role_ids) - set(valid_role_ids)
+        if invalid_roles:
+            logger.error(f"Invalid role IDs: {invalid_roles}")
+            raise ValueError(f"Invalid role IDs: {list(invalid_roles)}")
+    
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         
         # Remove existing roles
         cursor.execute("DELETE FROM user_roles WHERE user_id = %s", (user_id,))
+        deleted_count = cursor.rowcount
+        logger.info(f"Removed {deleted_count} existing role(s) from user {user_id}")
         
         # Add new roles
         if role_ids:
@@ -228,13 +277,28 @@ def assign_user_roles(user_id: int, role_ids: List[int]) -> bool:
                     "INSERT INTO user_roles (user_id, role_id, assigned_at) VALUES (%s, %s, %s)",
                     (user_id, role_id, datetime.utcnow())
                 )
+            logger.info(f"Assigned {len(role_ids)} role(s) to user {user_id}: {role_ids}")
+        else:
+            logger.info(f"Removed all roles from user {user_id}")
         
         conn.commit()
+        logger.info(f"✓ Successfully committed role changes for user {user_id}")
+        
+        # Invalidate caches for this user
+        InProcessCache.delete(f"user_permissions:{user_id}", category="permissions")
+        InProcessCache.delete(f"user_menu:{user_id}", category="menus")
+        InProcessCache.delete("all_users_active", category="general")  # User list changed
+        logger.info(f"✓ Invalidated cache for user {user_id} after role assignment")
+        
         return True
         
+    except ValueError:
+        # Re-raise validation errors without rollback (no changes made yet)
+        raise
     except Exception as e:
         conn.rollback()
-        raise e
+        logger.error(f"✗ Failed to assign roles to user {user_id}: {str(e)}")
+        raise Exception(f"Database error while assigning roles: {str(e)}")
     finally:
         conn.close()
 
@@ -243,6 +307,15 @@ def assign_user_roles(user_id: int, role_ids: List[int]) -> bool:
 
 def get_all_roles() -> List[Dict[str, Any]]:
     """Get all roles with their permissions."""
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Try cache first
+    cached_roles = InProcessCache.get("all_roles", category="roles")
+    if cached_roles is not None:
+        logger.debug("Returning roles from cache")
+        return cached_roles
+    
+    # Cache miss - fetch from database
     conn = get_db_connection_dict()
     try:
         cursor = conn.cursor()
@@ -274,6 +347,11 @@ def get_all_roles() -> List[Dict[str, Any]]:
         
         cursor.execute(query)
         roles = cursor.fetchall()
+        
+        # Cache the result
+        InProcessCache.set("all_roles", roles, category="roles")
+        logger.debug(f"Cached {len(roles)} roles")
+        
         return roles
         
     finally:
@@ -336,10 +414,10 @@ def create_role(role_name: str, role_description: str) -> Dict[str, Any]:
         RETURNING id as role_id, name as role_name, description as role_description, is_system_role, created_at
     """
     
-    result = execute_update(
+    result = execute_query(
         query,
         (role_name, role_name, role_description, datetime.utcnow()),
-        return_dict=True
+        fetch_one=True
     )
     
     return result
@@ -382,7 +460,7 @@ def update_role(role_id: int, role_name: Optional[str] = None, role_description:
         RETURNING id as role_id, name as role_name, description as role_description, is_system_role, created_at
     """
     
-    result = execute_update(query, tuple(params), return_dict=True)
+    result = execute_query(query, tuple(params), fetch_one=True)
     return result
 
 
@@ -411,13 +489,46 @@ def assign_role_permissions(role_id: int, permission_ids: List[int]) -> bool:
         
     Returns:
         True if successful
+        
+    Raises:
+        ValueError: If role_id or permission_ids are invalid
+        Exception: For database errors
     """
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Validate role exists
+    role_check = execute_query(
+        "SELECT id FROM roles WHERE id = %s",
+        (role_id,),
+        fetch_one=True
+    )
+    if not role_check:
+        logger.error(f"Cannot assign permissions: Role {role_id} not found")
+        raise ValueError(f"Role {role_id} not found")
+    
+    # Validate all permission_ids exist
+    if permission_ids:
+        logger.info(f"Validating {len(permission_ids)} permission IDs: {permission_ids}")
+        perm_check = execute_query(
+            "SELECT id FROM permissions WHERE id = ANY(%s)",
+            (permission_ids,),
+            fetch_all=True
+        )
+        valid_perm_ids = [p['id'] for p in perm_check]
+        logger.info(f"Found {len(valid_perm_ids)} valid permissions: {valid_perm_ids}")
+        invalid_perms = set(permission_ids) - set(valid_perm_ids)
+        if invalid_perms:
+            logger.error(f"Invalid permission IDs: {invalid_perms}. Requested: {permission_ids}, Valid: {valid_perm_ids}")
+            raise ValueError(f"Invalid permission IDs: {list(invalid_perms)}")
+    
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         
         # Remove existing permissions
         cursor.execute("DELETE FROM role_permissions WHERE role_id = %s", (role_id,))
+        deleted_count = cursor.rowcount
+        logger.info(f"Removed {deleted_count} existing permission(s) from role {role_id}")
         
         # Add new permissions
         if permission_ids:
@@ -426,19 +537,53 @@ def assign_role_permissions(role_id: int, permission_ids: List[int]) -> bool:
                     "INSERT INTO role_permissions (role_id, permission_id, granted_at) VALUES (%s, %s, %s)",
                     (role_id, permission_id, datetime.utcnow())
                 )
+            logger.info(f"Assigned {len(permission_ids)} permission(s) to role {role_id}: {permission_ids}")
+        else:
+            logger.info(f"Removed all permissions from role {role_id}")
         
         conn.commit()
+        logger.info(f"✓ Successfully committed permission changes for role {role_id}")
+        
+        # Invalidate role cache (affects all users with this role)
+        InProcessCache.delete("all_roles", category="roles")
+        
+        # Get all users with this role and invalidate their caches
+        users_with_role = execute_query(
+            "SELECT DISTINCT user_id FROM user_roles WHERE role_id = %s",
+            (role_id,),
+            fetch_all=True
+        )
+        for user in users_with_role:
+            user_id = user['user_id']
+            InProcessCache.delete(f"user_permissions:{user_id}", category="permissions")
+            InProcessCache.delete(f"user_menu:{user_id}", category="menus")
+        
+        logger.info(f"✓ Invalidated cache for {len(users_with_role)} user(s) affected by role {role_id} changes")
+        
         return True
         
+    except ValueError:
+        # Re-raise validation errors
+        raise
     except Exception as e:
         conn.rollback()
-        raise e
+        logger.error(f"✗ Failed to assign permissions to role {role_id}: {str(e)}")
+        raise Exception(f"Database error while assigning permissions: {str(e)}")
     finally:
         conn.close()
 
 
 def get_all_permissions() -> List[Dict[str, Any]]:
     """Get all available permissions."""
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    # Try cache first
+    cached_permissions = InProcessCache.get("all_permissions", category="permissions")
+    if cached_permissions is not None:
+        logger.debug("Returning permissions from cache")
+        return cached_permissions
+    
+    # Cache miss - fetch from database
     query = """
         SELECT 
             id as permission_id,
@@ -451,7 +596,13 @@ def get_all_permissions() -> List[Dict[str, Any]]:
         ORDER BY category, code
     """
     
-    return execute_query(query, fetch_all=True)
+    permissions = execute_query(query, fetch_all=True)
+    
+    # Cache the result
+    InProcessCache.set("all_permissions", permissions, category="permissions")
+    logger.debug(f"Cached {len(permissions)} permissions")
+    
+    return permissions
 
 
 # ==================== AUDIT LOG ====================
@@ -559,17 +710,17 @@ def create_audit_log(
     import json
     
     query = """
-        INSERT INTO audit_log (user_id, action, resource_type, resource_id, changes, ip_address, created_at)
+        INSERT INTO audit_log (user_id, action, resource_type, resource_id, details, ip_address, created_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-        RETURNING log_id, user_id, action, resource_type, resource_id, changes, ip_address, created_at
+        RETURNING id as log_id, user_id, action, resource_type, resource_id, details as changes, ip_address, created_at
     """
     
     changes_json = json.dumps(changes) if changes else None
     
-    result = execute_update(
+    result = execute_query(
         query,
         (user_id, action, resource_type, resource_id, changes_json, ip_address, datetime.utcnow()),
-        return_dict=True
+        fetch_one=True
     )
     
     return result
