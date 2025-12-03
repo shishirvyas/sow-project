@@ -88,6 +88,8 @@ async def upload_sow(
         
         # Upload to Azure Blob Storage
         from src.app.services.azure_blob_service import AzureBlobService
+        from src.app.services.file_management_service import FileManagementService
+        
         blob_service = AzureBlobService()
         
         result = blob_service.upload_sow(
@@ -96,10 +98,26 @@ async def upload_sow(
             content_type=file.content_type or "application/octet-stream"
         )
         
-        logging.info(f"Uploaded SOW: {result['blob_name']}")
+        # Create document record in database with user ownership
+        file_service = FileManagementService()
+        document_id = file_service.create_document_record(
+            blob_name=result['blob_name'],
+            original_filename=result['original_filename'],
+            file_size_bytes=result['size'],
+            content_type=result['content_type'],
+            uploaded_by=user_id,
+            blob_url=result.get('url'),
+            metadata={
+                'upload_method': 'web_ui',
+                'original_content_type': file.content_type
+            }
+        )
+        
+        logging.info(f"Uploaded SOW: {result['blob_name']} by user {user_id}, document_id={document_id}")
         
         return {
             "message": "SOW uploaded successfully",
+            "document_id": document_id,
             **result
         }
         
@@ -117,7 +135,7 @@ def process_sow_from_blob(
     """
     Process a SOW document from Azure Blob Storage
     
-    Requires: analysis.create permission
+    Requires: analysis.create permission + document access permission
     
     Args:
         blob_name: Name of the blob in Azure Storage (from upload response)
@@ -129,29 +147,58 @@ def process_sow_from_blob(
     permissions = get_user_permissions(user_id)
     if 'analysis.create' not in permissions:
         raise HTTPException(status_code=403, detail="Permission denied: analysis.create required")
+    
     from datetime import datetime
     from src.app.services.sow_processor import SOWProcessor
     from src.app.services.azure_blob_service import AzureBlobService
+    from src.app.services.file_management_service import FileManagementService
     
     blob_service = AzureBlobService()
+    file_service = FileManagementService()
     start_time = datetime.now()
+    
+    # Check if user has access to this document
+    if not file_service.user_can_access_document(user_id, blob_name):
+        raise HTTPException(
+            status_code=403, 
+            detail="Permission denied: You can only analyze files you uploaded or have file.view_all permission"
+        )
+    
+    # Update document status to processing
+    file_service.update_analysis_status(blob_name, 'processing')
     
     try:
         processor = SOWProcessor()
         results = processor.process_sow_from_blob(blob_name)
         
         # Add timestamp and processing metadata
+        end_time = datetime.now()
         results["processing_started_at"] = start_time.isoformat()
-        results["processing_completed_at"] = datetime.now().isoformat()
+        results["processing_completed_at"] = end_time.isoformat()
+        analysis_duration_ms = int((end_time - start_time).total_seconds() * 1000)
         
         # Store ALL results in Azure Blob Storage (success, partial, or failed)
         try:
             storage_result = blob_service.store_analysis_result(blob_name, results)
             results["storage"] = storage_result
             logging.info(f"Analysis results stored: {storage_result['result_blob_name']}")
+            
+            # Update document status and create analysis result record
+            doc = file_service.get_document_by_blob_name(blob_name)
+            if doc:
+                file_service.update_analysis_status(blob_name, 'completed', end_time)
+                file_service.create_analysis_result(
+                    document_id=doc['id'],
+                    result_blob_name=storage_result['result_blob_name'],
+                    analyzed_by=user_id,
+                    analysis_duration_ms=analysis_duration_ms,
+                    status='completed' if results.get('status') != 'partial' else 'partial'
+                )
+            
         except Exception as storage_error:
             logging.error(f"Failed to store analysis results in blob storage: {storage_error}")
             results["storage_warning"] = "Analysis completed but results could not be stored in blob storage"
+            file_service.update_analysis_status(blob_name, 'failed')
         
         # Check if processing completely failed (old error format for compatibility)
         if "error" in results and results.get("status") != "failed":
@@ -203,12 +250,11 @@ async def get_analysis_history(
     user_id: int = Depends(get_current_user)
 ):
     """
-    Get all analysis results from Azure Blob Storage
+    Get analysis results from database with user permission filtering
     
     Requires: analysis.view permission
     
-    Returns:
-        List of all analysis results with metadata
+    Returns only files uploaded by the user, unless user has file.view_all permission
     """
     # Check permission
     permissions = get_user_permissions(user_id)
@@ -216,101 +262,175 @@ async def get_analysis_history(
         raise HTTPException(status_code=403, detail="Permission denied: analysis.view required")
     
     try:
-        from src.app.services.azure_blob_service import AzureBlobService
-        import json
+        from src.app.services.file_management_service import FileManagementService
+        from src.app.db.client import get_db_connection_dict
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
         
-        blob_service = AzureBlobService()
-        results_container = "sow-analysis-results"
+        file_service = FileManagementService()
         
-        # Get container client
-        container_client = blob_service.blob_service_client.get_container_client(results_container)
+        # Check if user has file.view_all permission
+        has_view_all = 'file.view_all' in permissions
         
-        # Check if container exists
-        if not container_client.exists():
-            return {
-                "history": [],
-                "count": 0,
-                "success_count": 0,
-                "error_count": 0
-            }
+        logging.info(f"User {user_id} fetching analysis history (has_view_all={has_view_all})")
         
-        # List all blobs in results container (sorted by last_modified, newest first)
-        blobs = list(container_client.list_blobs())
+        # Query database for analysis history with document metadata
+        conn = get_db_connection_dict()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Sort by creation time (newest first) before processing
-        blobs.sort(key=lambda b: b.creation_time or b.last_modified, reverse=True)
+        # Build query based on permissions
+        if has_view_all:
+            # Manager/Admin: Get all documents with analysis results
+            query = """
+                SELECT 
+                    ud.id as document_id,
+                    ud.blob_name as source_blob,
+                    ud.original_filename,
+                    ud.file_size_bytes,
+                    ud.upload_date,
+                    ud.uploaded_by,
+                    ud.analysis_status,
+                    ud.last_analyzed_at,
+                    u.full_name as uploaded_by_name,
+                    u.email as uploaded_by_email,
+                    ar.id as analysis_id,
+                    ar.result_blob_name,
+                    ar.analyzed_by,
+                    ar.analysis_date,
+                    ar.analysis_duration_ms,
+                    ar.status as analysis_result_status,
+                    ar.error_message,
+                    ar.prompts_executed,
+                    analyzer.full_name as analyzed_by_name
+                FROM uploaded_documents ud
+                LEFT JOIN analysis_results ar ON ud.id = ar.document_id
+                LEFT JOIN users u ON ud.uploaded_by = u.id
+                LEFT JOIN users analyzer ON ar.analyzed_by = analyzer.id
+                WHERE ud.is_deleted = FALSE
+                ORDER BY 
+                    COALESCE(ar.analysis_date, ud.upload_date) DESC
+                LIMIT 100
+            """
+            cursor.execute(query)
+        else:
+            # Analyst/Viewer: Get only own documents
+            query = """
+                SELECT 
+                    ud.id as document_id,
+                    ud.blob_name as source_blob,
+                    ud.original_filename,
+                    ud.file_size_bytes,
+                    ud.upload_date,
+                    ud.uploaded_by,
+                    ud.analysis_status,
+                    ud.last_analyzed_at,
+                    u.full_name as uploaded_by_name,
+                    u.email as uploaded_by_email,
+                    ar.id as analysis_id,
+                    ar.result_blob_name,
+                    ar.analyzed_by,
+                    ar.analysis_date,
+                    ar.analysis_duration_ms,
+                    ar.status as analysis_result_status,
+                    ar.error_message,
+                    ar.prompts_executed,
+                    analyzer.full_name as analyzed_by_name
+                FROM uploaded_documents ud
+                LEFT JOIN analysis_results ar ON ud.id = ar.document_id
+                LEFT JOIN users u ON ud.uploaded_by = u.id
+                LEFT JOIN users analyzer ON ar.analyzed_by = analyzer.id
+                WHERE ud.uploaded_by = %s AND ud.is_deleted = FALSE
+                ORDER BY 
+                    COALESCE(ar.analysis_date, ud.upload_date) DESC
+                LIMIT 100
+            """
+            cursor.execute(query, (user_id,))
         
-        # Limit to most recent 50 blobs for performance (configurable)
-        MAX_BLOBS = 50
-        blobs = blobs[:MAX_BLOBS]
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
         
+        # Transform database results to history format
         history = []
         success_count = 0
         error_count = 0
         
-        # Process blobs in parallel-like manner (download only essential data)
-        for blob in blobs:
-            try:
-                blob_client = container_client.get_blob_client(blob.name)
-                
-                # Download and parse the full JSON (limited to 50 blobs for performance)
-                content = blob_client.download_blob().readall()
-                result_data = json.loads(content.decode('utf-8'))
-                
-                # Extract data from JSON
-                status = result_data.get("status", "unknown")
-                source_blob = result_data.get("blob_name", "unknown")
-                prompts_processed = result_data.get("prompts_processed", 0)
-                processing_completed_at = result_data.get("processing_completed_at")
-                has_errors = bool(result_data.get("errors"))
-                error_count_item = len(result_data.get("errors", []))
-                
-                # Check if PDF exists (cached in blob metadata if possible)
-                pdf_exists = False  # Skip PDF check for speed - can be lazy loaded
-                api_base = str(request.base_url).rstrip('/')
-                pdf_url = f"{api_base}/api/v1/analysis-history/{blob.name}/download-pdf" if pdf_exists else None
-                
+        api_base = str(request.base_url).rstrip('/')
+        
+        for row in results:
+            # Skip documents without analysis results if needed
+            if row['result_blob_name'] is None:
+                # Document uploaded but not yet analyzed
                 history_item = {
-                    "result_blob_name": blob.name,
-                    "source_blob": source_blob,
-                    "status": status,
-                    "prompts_processed": prompts_processed,
-                    "processing_started_at": None,  # Lazy load
-                    "processing_completed_at": processing_completed_at,
-                    "has_errors": has_errors,
-                    "error_count": error_count_item,
-                    "created": blob.creation_time.isoformat() if blob.creation_time else None,
-                    "size": blob.size,
-                    "url": blob_client.url,
-                    "pdf_available": pdf_exists,
-                    "pdf_url": pdf_url
+                    "document_id": row['document_id'],
+                    "source_blob": row['source_blob'],
+                    "original_filename": row['original_filename'],
+                    "file_size_bytes": row['file_size_bytes'],
+                    "upload_date": row['upload_date'].isoformat() if row['upload_date'] else None,
+                    "uploaded_by": row['uploaded_by'],
+                    "uploaded_by_name": row['uploaded_by_name'],
+                    "uploaded_by_email": row['uploaded_by_email'],
+                    "status": row['analysis_status'] or 'pending',
+                    "result_blob_name": None,
+                    "analysis_date": None,
+                    "analysis_duration_ms": None,
+                    "prompts_processed": 0,
+                    "has_errors": False,
+                    "error_count": 0,
+                    "error_message": None,
+                    "analyzed_by_name": None,
+                    "pdf_available": False,
+                    "pdf_url": None
                 }
-                
-                # Count success vs errors
-                if status in ["success", "partial_success"]:
-                    success_count += 1
-                elif status in ["failed", "error"]:
-                    error_count += 1
-                
                 history.append(history_item)
-                
-            except Exception as parse_error:
-                logging.error(f"Error parsing blob {blob.name}: {parse_error}")
-                # Add minimal info for unparseable blobs
-                history.append({
-                    "result_blob_name": blob.name,
-                    "source_blob": "unknown",
-                    "status": "parse_error",
-                    "error": str(parse_error),
-                    "created": blob.creation_time.isoformat() if blob.creation_time else None,
-                    "size": blob.size
-                })
+                continue
+            
+            # Document with analysis results
+            status = row['analysis_result_status'] or row['analysis_status'] or 'unknown'
+            has_errors = bool(row['error_message'])
+            prompts_count = len(row['prompts_executed']) if row['prompts_executed'] else 0
+            
+            history_item = {
+                "document_id": row['document_id'],
+                "source_blob": row['source_blob'],
+                "original_filename": row['original_filename'],
+                "file_size_bytes": row['file_size_bytes'],
+                "upload_date": row['upload_date'].isoformat() if row['upload_date'] else None,
+                "uploaded_by": row['uploaded_by'],
+                "uploaded_by_name": row['uploaded_by_name'],
+                "uploaded_by_email": row['uploaded_by_email'],
+                "result_blob_name": row['result_blob_name'],
+                "status": status,
+                "analysis_date": row['analysis_date'].isoformat() if row['analysis_date'] else None,
+                "processing_completed_at": row['analysis_date'].isoformat() if row['analysis_date'] else None,
+                "analysis_duration_ms": row['analysis_duration_ms'],
+                "prompts_processed": prompts_count,
+                "has_errors": has_errors,
+                "error_count": 1 if has_errors else 0,
+                "error_message": row['error_message'],
+                "analyzed_by": row['analyzed_by'],
+                "analyzed_by_name": row['analyzed_by_name'],
+                "pdf_available": False,  # Will be lazy loaded or checked per request
+                "pdf_url": f"{api_base}/api/v1/analysis-history/{row['result_blob_name']}/download-pdf" if row['result_blob_name'] else None
+            }
+            
+            # Count success vs errors
+            if status in ["completed", "success", "partial_success"]:
+                success_count += 1
+            elif status in ["failed", "error"]:
+                error_count += 1
+            
+            history.append(history_item)
+        
+        logging.info(f"Returning {len(history)} analysis history items for user {user_id}")
         
         return {
             "history": history,
             "count": len(history),
             "success_count": success_count,
-            "error_count": error_count
+            "error_count": error_count,
+            "view_mode": "all" if has_view_all else "own",
+            "user_id": user_id
         }
         
     except Exception as e:
@@ -1072,5 +1192,142 @@ async def delete_prompt_variable(
         raise
     except Exception as e:
         logging.error(f"Error deleting variable: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# File Management Endpoints
+# ============================================================================
+
+@router.get("/my-documents")
+async def get_my_documents(
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Get all documents accessible by the current user
+    
+    Requires: document.view permission
+    
+    Returns:
+        - Own uploaded files if user doesn't have file.view_all
+        - All files if user has file.view_all permission
+    """
+    try:
+        # Check permission
+        permissions = get_user_permissions(user_id)
+        if 'document.view' not in permissions:
+            raise HTTPException(status_code=403, detail="Permission denied: document.view required")
+        
+        from src.app.services.file_management_service import FileManagementService
+        
+        file_service = FileManagementService()
+        documents = file_service.get_user_documents(user_id, include_deleted=False, limit=100)
+        
+        has_view_all = 'file.view_all' in permissions
+        
+        return {
+            "documents": documents,
+            "count": len(documents),
+            "view_mode": "all" if has_view_all else "own"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching user documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/documents/{blob_name:path}/info")
+async def get_document_info(
+    blob_name: str,
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Get document metadata and check user access
+    
+    Requires: document.view permission + access to the specific document
+    """
+    try:
+        # Check permission
+        permissions = get_user_permissions(user_id)
+        if 'document.view' not in permissions:
+            raise HTTPException(status_code=403, detail="Permission denied: document.view required")
+        
+        from src.app.services.file_management_service import FileManagementService
+        
+        file_service = FileManagementService()
+        
+        # Check if user can access this document
+        if not file_service.user_can_access_document(user_id, blob_name):
+            raise HTTPException(
+                status_code=403,
+                detail="Permission denied: You can only view files you uploaded or have file.view_all permission"
+            )
+        
+        # Get document info
+        document = file_service.get_document_by_blob_name(blob_name)
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {
+            "document": document,
+            "can_access": True,
+            "is_owner": document['uploaded_by'] == user_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching document info: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/documents/stats")
+async def get_document_stats(
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Get document statistics for the user
+    
+    Requires: document.view permission
+    """
+    try:
+        # Check permission
+        permissions = get_user_permissions(user_id)
+        if 'document.view' not in permissions:
+            raise HTTPException(status_code=403, detail="Permission denied: document.view required")
+        
+        from src.app.services.file_management_service import FileManagementService
+        
+        file_service = FileManagementService()
+        documents = file_service.get_user_documents(user_id, include_deleted=False, limit=1000)
+        
+        # Calculate stats
+        total_count = len(documents)
+        total_size = sum(doc['file_size_bytes'] for doc in documents)
+        
+        status_counts = {}
+        for doc in documents:
+            status = doc.get('analysis_status', 'pending')
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        has_view_all = 'file.view_all' in permissions
+        
+        return {
+            "total_documents": total_count,
+            "total_size_bytes": total_size,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "status_breakdown": status_counts,
+            "view_mode": "all" if has_view_all else "own",
+            "pending_analysis": status_counts.get('pending', 0),
+            "completed_analysis": status_counts.get('completed', 0)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error fetching document stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
