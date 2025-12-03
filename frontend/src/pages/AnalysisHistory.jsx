@@ -25,6 +25,8 @@ import Tooltip from '@mui/material/Tooltip'
 import IconButton from '@mui/material/IconButton'
 import DownloadIcon from '@mui/icons-material/Download'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
+import RefreshIcon from '@mui/icons-material/Refresh'
+import Snackbar from '@mui/material/Snackbar'
 
 export default function AnalysisHistory() {
   const navigate = useNavigate()
@@ -38,10 +40,60 @@ export default function AnalysisHistory() {
   const [rowsPerPage, setRowsPerPage] = React.useState(10)
   const [pdfGenerating, setPdfGenerating] = React.useState({})
   const [pdfErrors, setPdfErrors] = React.useState({})
+  const [retriggerLoading, setRetriggerLoading] = React.useState({})
+  const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'success' })
 
   React.useEffect(() => {
     fetchHistory()
   }, [])
+
+  const handleRetriggerAnalysis = async (event, blobName) => {
+    event.stopPropagation() // Prevent row click
+    
+    console.log(`[RETRIGGER] Starting analysis for: ${blobName}`)
+    
+    setRetriggerLoading(prev => ({ ...prev, [blobName]: true }))
+    
+    try {
+      const response = await apiFetch(`process-sow/${encodeURIComponent(blobName)}`, {
+        method: 'POST'
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || 'Failed to retrigger analysis')
+      }
+      
+      // Show success message
+      setSnackbar({
+        open: true,
+        message: 'Analysis started! We will notify you when complete.',
+        severity: 'info'
+      })
+      
+      // Update the document status to processing in the UI
+      setHistory(prev => prev.map(item => 
+        item.blob_name === blobName || item.source_blob === blobName
+          ? { ...item, status: 'processing' }
+          : item
+      ))
+      
+      // Refresh history after a short delay to show processing status
+      setTimeout(() => {
+        fetchHistory()
+      }, 2000)
+      
+    } catch (err) {
+      console.error('[RETRIGGER] Error:', err)
+      setSnackbar({
+        open: true,
+        message: err.message || 'Failed to retrigger analysis',
+        severity: 'error'
+      })
+    } finally {
+      setRetriggerLoading(prev => ({ ...prev, [blobName]: false }))
+    }
+  }
 
   const handleDownloadPDF = async (event, resultBlobName) => {
     event.stopPropagation() // Prevent row click
@@ -74,7 +126,7 @@ export default function AnalysisHistory() {
         // Generate PDF first
         console.log(`[PDF DOWNLOAD] PDF not generated, generating now...`)
         const generateResponse = await apiFetch(
-          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/generate-pdf`,
+          `analysis-history/${encodeURIComponent(resultBlobName)}/generate-pdf`,
           { method: 'POST' }
         )
         
@@ -88,7 +140,7 @@ export default function AnalysisHistory() {
           console.log(`[PDF DOWNLOAD] PDF generated successfully, downloading...`)
           // Download the PDF via API endpoint
           const downloadResponse = await apiFetch(
-            `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+            `analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
           )
           
           console.log(`[PDF DOWNLOAD] Download response status: ${downloadResponse.status}`)
@@ -124,7 +176,7 @@ export default function AnalysisHistory() {
         console.log(`[PDF DOWNLOAD] PDF already available, downloading directly...`)
         // PDF exists, download it via API endpoint
         const downloadResponse = await apiFetch(
-          `api/v1/analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
+          `analysis-history/${encodeURIComponent(resultBlobName)}/download-pdf`
         )
         
         console.log(`[PDF DOWNLOAD] Download response status: ${downloadResponse.status}`)
@@ -198,20 +250,20 @@ export default function AnalysisHistory() {
   }
 
   const getStatusChip = (status, hasErrors) => {
-    if (status === 'success') {
+    if (status === 'completed' || status === 'success') {
       return (
         <Chip
           icon={<CheckCircleIcon />}
-          label="S"
+          label="Success"
           color="success"
           size="small"
         />
       )
-    } else if (status === 'partial_success') {
+    } else if (status === 'partial_success' || status === 'partial') {
       return (
         <Chip
           icon={<WarningIcon />}
-          label="PS"
+          label="Partial"
           color="warning"
           size="small"
         />
@@ -220,15 +272,31 @@ export default function AnalysisHistory() {
       return (
         <Chip
           icon={<ErrorIcon />}
-          label="F"
+          label="Failed"
           color="error"
+          size="small"
+        />
+      )
+    } else if (status === 'processing') {
+      return (
+        <Chip
+          label="Processing"
+          color="info"
+          size="small"
+        />
+      )
+    } else if (status === 'pending') {
+      return (
+        <Chip
+          label="Pending"
+          color="default"
           size="small"
         />
       )
     } else {
       return (
         <Chip
-          label={status.substring(0, 2).toUpperCase()}
+          label={status}
           size="small"
         />
       )
@@ -305,7 +373,10 @@ export default function AnalysisHistory() {
       return history // All
     } else if (tabValue === 1) {
       return history.filter(item => 
-        item.status === 'success' || item.status === 'partial_success'
+        item.status === 'completed' || 
+        item.status === 'success' || 
+        item.status === 'partial_success' ||
+        item.status === 'partial'
       )
     } else {
       return history.filter(item => 
@@ -369,7 +440,7 @@ export default function AnalysisHistory() {
                       <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }} align="right">Errors</TableCell>
                       <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Started</TableCell>
                       <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Duration</TableCell>
-                      <TableCell align="center">PDF</TableCell>
+                      <TableCell align="center">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -382,18 +453,19 @@ export default function AnalysisHistory() {
 
                       return (
                         <Tooltip
-                          key={item.result_blob_name || index}
-                          title="Click to view details"
+                          key={item.result_blob_name || item.document_id || index}
+                          title={item.result_blob_name ? "Click to view analysis details" : "Not yet analyzed"}
                           placement="left"
                         >
                           <TableRow
                             hover
-                            onClick={() => navigate(`/analysis-history/${encodeURIComponent(item.result_blob_name)}`)}
+                            onClick={() => item.result_blob_name && navigate(`/analysis-history/${encodeURIComponent(item.result_blob_name)}`)}
                             sx={{
-                              cursor: 'pointer',
-                              '&:hover': {
+                              cursor: item.result_blob_name ? 'pointer' : 'default',
+                              opacity: item.result_blob_name ? 1 : 0.6,
+                              '&:hover': item.result_blob_name ? {
                                 bgcolor: 'action.hover',
-                              }
+                              } : {},
                             }}
                           >
                             <TableCell>
@@ -408,14 +480,15 @@ export default function AnalysisHistory() {
                                   maxWidth: { xs: '150px', sm: '250px', md: 'none' }
                                 }}
                               >
-                                {truncateFilename(item.source_blob, 50)}
+                                {truncateFilename(item.original_filename || item.source_blob, 50)}
                               </Typography>
                               <Typography 
                                 variant="caption" 
                                 color="text.secondary"
                                 sx={{ display: { xs: 'none', sm: 'block' } }}
                               >
-                                {truncateFilename(item.result_blob_name, 40)}
+                                {item.uploaded_by_name && `Uploaded by: ${item.uploaded_by_name}`}
+                                {item.upload_date && ` • ${formatDate(item.upload_date)}`}
                               </Typography>
                             </TableCell>
                             <TableCell>
@@ -438,32 +511,59 @@ export default function AnalysisHistory() {
                             </TableCell>
                             <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                               <Typography variant="body2">
-                                {formatDate(item.processing_started_at || item.created)}
+                                {formatDate(item.analysis_date || item.upload_date)}
                               </Typography>
                             </TableCell>
                             <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
                               <Typography variant="body2">
-                                {formatDuration(item.processing_started_at, item.processing_completed_at)}
+                                {item.analysis_duration_ms 
+                                  ? `${(item.analysis_duration_ms / 1000).toFixed(1)}s` 
+                                  : 'N/A'}
                               </Typography>
                             </TableCell>
                             <TableCell align="center">
-                              {(() => {
-                                const pdfStatus = getPDFIconAndTooltip(item)
-                                return (
-                                  <Tooltip title={pdfStatus.tooltip}>
+                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                {/* Retrigger Analysis Button - shown for pending, failed, or partial */}
+                                {(item.status === 'pending' || item.status === 'failed' || item.status === 'partial') && (
+                                  <Tooltip title="Retrigger analysis for this document">
                                     <span>
                                       <IconButton
                                         size="small"
-                                        color={pdfStatus.color}
-                                        onClick={(e) => handleDownloadPDF(e, item.result_blob_name)}
-                                        disabled={pdfStatus.disabled}
+                                        color="primary"
+                                        onClick={(e) => handleRetriggerAnalysis(e, item.blob_name || item.source_blob)}
+                                        disabled={retriggerLoading[item.blob_name || item.source_blob] || item.status === 'processing'}
                                       >
-                                        {pdfStatus.icon}
+                                        {retriggerLoading[item.blob_name || item.source_blob] ? (
+                                          <CircularProgress size={20} />
+                                        ) : (
+                                          <RefreshIcon />
+                                        )}
                                       </IconButton>
                                     </span>
                                   </Tooltip>
-                                )
-                              })()}
+                                )}
+                                
+                                {/* PDF Download Button - shown only if analysis completed */}
+                                {item.result_blob_name && (
+                                  (() => {
+                                    const pdfStatus = getPDFIconAndTooltip(item)
+                                    return (
+                                      <Tooltip title={pdfStatus.tooltip}>
+                                        <span>
+                                          <IconButton
+                                            size="small"
+                                            color={pdfStatus.color}
+                                            onClick={(e) => handleDownloadPDF(e, item.result_blob_name)}
+                                            disabled={pdfStatus.disabled}
+                                          >
+                                            {pdfStatus.icon}
+                                          </IconButton>
+                                        </span>
+                                      </Tooltip>
+                                    )
+                                  })()
+                                )}
+                              </Box>
                             </TableCell>
                           </TableRow>
                         </Tooltip>
@@ -486,6 +586,22 @@ export default function AnalysisHistory() {
           )}
         </CardContent>
       </Card>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </MainLayout>
   )
 }

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from .middleware import RequestLoggingMiddleware
 from .api.v1.endpoints import router as v1_router
 from .api.v1.profile import router as profile_router
 from .api.v1.auth import router as auth_router
@@ -30,11 +31,18 @@ else:
 
 from .core.config import settings
 
-# Configure logging
+# Configure logging with more visible format
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(levelname)s:%(name)s:%(message)s',
+    force=True  # Override any existing logging configuration
 )
+
+# Set our middleware logger to INFO level
+logging.getLogger('src.app.middleware.logging').setLevel(logging.INFO)
+
+# Optionally reduce uvicorn access log noise
+logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 
 app = FastAPI(title="My Python Service")
 
@@ -57,6 +65,10 @@ app.add_middleware(
     expose_headers=["*"],  # Allow frontend to read all response headers
     max_age=3600,  # Cache preflight requests for 1 hour
 )
+
+# Add request logging middleware (should be added after CORS)
+app.add_middleware(RequestLoggingMiddleware)
+logging.info("Request logging middleware enabled")
 
 app.include_router(v1_router, prefix="/api/v1")
 app.include_router(profile_router, prefix="/api/v1")
