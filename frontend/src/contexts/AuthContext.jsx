@@ -178,6 +178,7 @@ export const AuthProvider = ({ children }) => {
     hasAllPermissions,
     hasRole,
     refreshProfile: loadUserProfile,
+    refreshUser: loadUserProfile, // Alias for compatibility
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

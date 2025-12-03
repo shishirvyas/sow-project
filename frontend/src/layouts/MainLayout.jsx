@@ -26,6 +26,7 @@ import ListItemText from '@mui/material/ListItemText'
 import CloseIcon from '@mui/icons-material/Close'
 import DynamicMenu from '../components/Menu/DynamicMenu'
 import { useAuth } from '../contexts/AuthContext'
+import { useAnalysisHistory } from '../contexts/AnalysisHistoryContext'
 
 const drawerWidth = 240
 const collapsedWidth = 72
@@ -102,79 +103,31 @@ export default function MainLayout({ children }) {
     }
   })
   const { user } = useAuth()
+  const { fetchHistory, getTodaysAnalyses, loading: historyLoading } = useAnalysisHistory()
   const [profileCardOpen, setProfileCardOpen] = useState(true)
   const [todaysAnalyses, setTodaysAnalyses] = useState([])
-  const [loadingAnalyses, setLoadingAnalyses] = useState(false)
 
-  // Fetch today's completed analyses
-  const fetchTodaysAnalyses = React.useCallback(async () => {
-    setLoadingAnalyses(true)
+  // Fetch today's completed analyses using cache
+  const loadTodaysAnalyses = React.useCallback(async () => {
     try {
-      const response = await apiFetch('analysis-history')
-      
-      if (!response.ok) {
-        console.error('❌ MainLayout: Failed to fetch analysis history, status:', response.status)
-        setTodaysAnalyses([])
-        return
-      }
-      
-      const data = await response.json()
-      const history = data.history || []
-      
-      console.log('👉 MainLayout: Checking today\'s analyses')
-      console.log('   Total items received:', history.length)
-      console.log('   Today\'s date:', new Date().toDateString())
-      
-      // Log all items for debugging
-      history.forEach((item, idx) => {
-        console.log(`   [${idx}] ${item.source_blob} - Status: ${item.status}, Completed: ${item.processing_completed_at}, Created: ${item.created}`)
-      })
-      
-      // Filter for completed analyses
-      const completed = history.filter(item => 
-        ['success', 'partial_success'].includes(item.status)
-      )
-      
-      console.log('   Total completed items:', completed.length)
-      
-      // First try: Today's completed analyses
-      let todaysCompleted = completed.filter(item => {
-        const completedToday = isToday(item.processing_completed_at)
-        const createdToday = isToday(item.created)
-        return completedToday || createdToday
-      })
-      
-      console.log('✅ MainLayout: Found', todaysCompleted.length, 'completed today')
-      
-      // Fallback: If no items today, show last 24 hours
-      if (todaysCompleted.length === 0) {
-        const last24Hours = new Date()
-        last24Hours.setHours(last24Hours.getHours() - 24)
-        
-        todaysCompleted = completed.filter(item => {
-          const itemDate = new Date(item.processing_completed_at || item.created)
-          return itemDate >= last24Hours
-        }).slice(0, 3)
-        
-        console.log('📅 MainLayout: Showing', todaysCompleted.length, 'from last 24 hours (no items today)')
-      }
-      
-      // Take only the 3 most recent
-      setTodaysAnalyses(todaysCompleted.slice(0, 3))
+      // This will use cache if valid (< 30 seconds old)
+      await fetchHistory()
+      // Get today's analyses from cache
+      const analyses = getTodaysAnalyses()
+      setTodaysAnalyses(analyses)
+      console.log('✅ MainLayout: Loaded', analyses.length, 'today\'s analyses from cache')
     } catch (error) {
-      console.error('Error fetching today\'s analyses:', error)
+      console.error('❌ Error loading today\'s analyses:', error)
       setTodaysAnalyses([])
-    } finally {
-      setLoadingAnalyses(false)
     }
-  }, [])
+  }, [fetchHistory, getTodaysAnalyses])
 
-  // Fetch on mount and refresh every 60 seconds (reduced from 30s to minimize server load)
+  // Fetch on mount and refresh every 60 seconds
   useEffect(() => {
-    fetchTodaysAnalyses()
-    const interval = setInterval(fetchTodaysAnalyses, 60000)
+    loadTodaysAnalyses()
+    const interval = setInterval(loadTodaysAnalyses, 60000)
     return () => clearInterval(interval)
-  }, [fetchTodaysAnalyses])
+  }, [loadTodaysAnalyses])
 
   // Persist collapsed state and reset on small screens
   useEffect(() => {
@@ -266,10 +219,9 @@ export default function MainLayout({ children }) {
                 />
               </ListItem>
               <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                <Button size="small" variant="contained" onClick={() => navigate('/profile')}>
+                <Button size="small" variant="contained" onClick={() => navigate('/profile')} fullWidth>
                   View Profile
                 </Button>
-                <Button size="small" onClick={() => navigate('/settings')}>Settings</Button>
               </Box>
             </Paper>
           )}
@@ -291,7 +243,7 @@ export default function MainLayout({ children }) {
                 />
               )}
             </Box>
-            {loadingAnalyses ? (
+            {historyLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
                 <CircularProgress size={24} />
               </Box>
