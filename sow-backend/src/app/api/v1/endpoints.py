@@ -127,13 +127,125 @@ async def upload_sow(
         logging.error(f"Error uploading SOW: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/process-sow-async/{blob_name:path}")
+async def process_sow_async(
+    blob_name: str,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Start SOW document analysis asynchronously (non-blocking)
+    
+    Requires: analysis.create permission + document access permission
+    
+    Args:
+        blob_name: Name of the blob in Azure Storage
+        background_tasks: FastAPI background tasks
+        user_id: Current user ID
+        
+    Returns:
+        Immediate response confirming analysis started
+    """
+    from src.app.services.file_management_service import FileManagementService
+    
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'analysis.create' not in permissions:
+        raise HTTPException(status_code=403, detail="Permission denied: analysis.create required")
+    
+    file_service = FileManagementService()
+    
+    # Check if user has access to this document
+    if not file_service.user_can_access_document(user_id, blob_name):
+        raise HTTPException(
+            status_code=403, 
+            detail="Permission denied: You can only analyze files you uploaded or have file.view_all permission"
+        )
+    
+    # Update document status to processing immediately
+    file_service.update_analysis_status(blob_name, 'processing')
+    
+    # Add background task to process the document
+    background_tasks.add_task(_process_sow_background, blob_name, user_id)
+    
+    logging.info(f"Analysis queued for {blob_name} by user {user_id}")
+    
+    return {
+        "message": "Analysis started successfully",
+        "blob_name": blob_name,
+        "status": "processing",
+        "note": "Analysis is running in the background. Check analysis history for results."
+    }
+
+def _process_sow_background(blob_name: str, user_id: int):
+    """Background task to process SOW document"""
+    from datetime import datetime
+    from src.app.services.sow_processor import SOWProcessor
+    from src.app.services.azure_blob_service import AzureBlobService
+    from src.app.services.file_management_service import FileManagementService
+    
+    blob_service = AzureBlobService()
+    file_service = FileManagementService()
+    start_time = datetime.now()
+    
+    try:
+        processor = SOWProcessor()
+        results = processor.process_sow_from_blob(blob_name)
+        
+        # Add timestamp and processing metadata
+        end_time = datetime.now()
+        results["processing_started_at"] = start_time.isoformat()
+        results["processing_completed_at"] = end_time.isoformat()
+        analysis_duration_ms = int((end_time - start_time).total_seconds() * 1000)
+        
+        # Store results in Azure Blob Storage
+        storage_result = blob_service.store_analysis_result(blob_name, results)
+        logging.info(f"[BACKGROUND] Analysis results stored: {storage_result['result_blob_name']}")
+        
+        # Update document status and create analysis result record
+        doc = file_service.get_document_by_blob_name(blob_name)
+        if doc:
+            file_service.update_analysis_status(blob_name, 'completed', end_time)
+            file_service.create_analysis_result(
+                document_id=doc['id'],
+                result_blob_name=storage_result['result_blob_name'],
+                analyzed_by=user_id,
+                analysis_duration_ms=analysis_duration_ms,
+                status='completed' if results.get('status') != 'partial' else 'partial'
+            )
+        
+        logging.info(f"[BACKGROUND] Analysis completed for {blob_name}")
+        
+    except Exception as e:
+        logging.error(f"[BACKGROUND] Error processing SOW {blob_name}: {e}", exc_info=True)
+        
+        # Update status to failed
+        file_service.update_analysis_status(blob_name, 'failed')
+        
+        # Store error result
+        error_result = {
+            "blob_name": blob_name,
+            "status": "error",
+            "processing_started_at": start_time.isoformat(),
+            "processing_completed_at": datetime.now().isoformat(),
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "prompts_processed": 0,
+            "results": {}
+        }
+        
+        try:
+            blob_service.store_analysis_result(blob_name, error_result)
+        except Exception as storage_error:
+            logging.error(f"[BACKGROUND] Failed to store error result: {storage_error}")
+
 @router.post("/process-sow/{blob_name:path}")
 def process_sow_from_blob(
     blob_name: str,
     user_id: int = Depends(get_current_user)
 ):
     """
-    Process a SOW document from Azure Blob Storage
+    Process a SOW document from Azure Blob Storage (SYNCHRONOUS - waits for completion)
     
     Requires: analysis.create permission + document access permission
     

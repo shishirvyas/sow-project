@@ -2,6 +2,7 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import MainLayout from '../layouts/MainLayout'
 import { apiFetch } from '../config/api'
+import { useAnalysisHistory } from '../contexts/AnalysisHistoryContext'
 import Typography from '@mui/material/Typography'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -28,6 +29,7 @@ const steps = ['Select File', 'Upload Document', 'Start Analysis']
 
 export default function AnalyzeDoc() {
   const navigate = useNavigate()
+  const { invalidateCache } = useAnalysisHistory()
   const [activeStep, setActiveStep] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState(null)
   const [blobName, setBlobName] = React.useState(null)
@@ -89,7 +91,7 @@ export default function AnalyzeDoc() {
     setError(null)
     
     try {
-      const response = await apiFetch(`process-sow/${encodeURIComponent(blobName)}`, {
+      const response = await apiFetch(`process-sow-async/${encodeURIComponent(blobName)}`, {
         method: 'POST',
       })
       
@@ -97,19 +99,29 @@ export default function AnalyzeDoc() {
         if (response.status === 404) {
           throw new Error('Analysis failed: Backend server not available. Please ensure the backend is running.')
         }
-        throw new Error(`Analysis failed: ${response.statusText}`)
+        const errorData = await response.json().catch(() => ({ detail: 'Analysis failed' }))
+        throw new Error(errorData.detail || `Analysis failed: ${response.statusText}`)
       }
       
       const data = await response.json()
-      setResult(data)
-      setActiveStep(3)
+      
+      // Invalidate cache so history page shows the pending document
+      invalidateCache()
+      
+      // Analysis started successfully - navigate to history page
+      setAnalyzing(false)
+      navigate('/analysis-history', {
+        state: {
+          message: 'Analysis started! Your document is being processed in the background. Check the Pending tab.',
+          severity: 'info'
+        }
+      })
     } catch (err) {
       if (err.name === 'TypeError' && err.message.includes('fetch')) {
         setError('Analysis failed: Backend server not available. Please ensure the backend is running on port 8000.')
       } else {
         setError(err.message || 'Failed to analyze document')
       }
-    } finally {
       setAnalyzing(false)
     }
   }

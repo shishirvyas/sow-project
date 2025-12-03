@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../config/api'
+import { useAnalysisHistory } from '../contexts/AnalysisHistoryContext'
 import MainLayout from '../layouts/MainLayout'
 import Typography from '@mui/material/Typography'
 import Box from '@mui/material/Box'
@@ -27,15 +28,27 @@ import DownloadIcon from '@mui/icons-material/Download'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import Snackbar from '@mui/material/Snackbar'
+import { useLocation } from 'react-router-dom'
 
 export default function AnalysisHistory() {
   const navigate = useNavigate()
-  const [loading, setLoading] = React.useState(true)
+  const location = useLocation()
+  const { 
+    history: cachedHistory, 
+    successCount: cachedSuccessCount, 
+    errorCount: cachedErrorCount,
+    loading: cacheLoading,
+    fetchHistory: fetchFromCache,
+    invalidateCache
+  } = useAnalysisHistory()
+  
   const [error, setError] = React.useState(null)
   const [history, setHistory] = React.useState([])
   const [successCount, setSuccessCount] = React.useState(0)
   const [errorCount, setErrorCount] = React.useState(0)
-  const [tabValue, setTabValue] = React.useState(0) // 0 = All, 1 = Success, 2 = Errors
+  const [pendingCount, setPendingCount] = React.useState(0)
+  const [loading, setLoading] = React.useState(true)
+  const [tabValue, setTabValue] = React.useState(0) // 0 = All, 1 = Success, 2 = Errors, 3 = Pending
   const [page, setPage] = React.useState(0)
   const [rowsPerPage, setRowsPerPage] = React.useState(10)
   const [pdfGenerating, setPdfGenerating] = React.useState({})
@@ -45,6 +58,17 @@ export default function AnalysisHistory() {
 
   React.useEffect(() => {
     fetchHistory()
+    
+    // Show message from navigation state (e.g., from AnalyzeDoc)
+    if (location.state?.message) {
+      setSnackbar({
+        open: true,
+        message: location.state.message,
+        severity: location.state.severity || 'info'
+      })
+      // Clear the state to prevent showing again on refresh
+      navigate(location.pathname, { replace: true, state: {} })
+    }
   }, [])
 
   const handleRetriggerAnalysis = async (event, blobName) => {
@@ -55,7 +79,7 @@ export default function AnalysisHistory() {
     setRetriggerLoading(prev => ({ ...prev, [blobName]: true }))
     
     try {
-      const response = await apiFetch(`process-sow/${encodeURIComponent(blobName)}`, {
+      const response = await apiFetch(`process-sow-async/${encodeURIComponent(blobName)}`, {
         method: 'POST'
       })
       
@@ -64,24 +88,25 @@ export default function AnalysisHistory() {
         throw new Error(errorData.detail || 'Failed to retrigger analysis')
       }
       
-      // Show success message
+      // Show success message immediately
       setSnackbar({
         open: true,
         message: 'Analysis started! We will notify you when complete.',
         severity: 'info'
       })
       
-      // Update the document status to processing in the UI
+      // Update the document status to processing in the UI immediately
       setHistory(prev => prev.map(item => 
         item.blob_name === blobName || item.source_blob === blobName
           ? { ...item, status: 'processing' }
           : item
       ))
       
-      // Refresh history after a short delay to show processing status
+      // Invalidate cache and refresh after analysis starts
+      invalidateCache()
       setTimeout(() => {
         fetchHistory()
-      }, 2000)
+      }, 5000)
       
     } catch (err) {
       console.error('[RETRIGGER] Error:', err)
@@ -213,21 +238,26 @@ export default function AnalysisHistory() {
     }
   }
 
+  // Sync with cache and calculate pending count
+  React.useEffect(() => {
+    setHistory(cachedHistory)
+    setSuccessCount(cachedSuccessCount)
+    setErrorCount(cachedErrorCount)
+    
+    // Calculate pending count
+    const pending = cachedHistory.filter(item => 
+      item.status === 'pending' || item.status === 'processing'
+    ).length
+    setPendingCount(pending)
+  }, [cachedHistory, cachedSuccessCount, cachedErrorCount])
+
   const fetchHistory = async () => {
     setLoading(true)
     setError(null)
     
     try {
-      const response = await apiFetch('analysis-history')
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch history: ${response.statusText}`)
-      }
-      
-      const data = await response.json()
-      setHistory(data.history || [])
-      setSuccessCount(data.success_count || 0)
-      setErrorCount(data.error_count || 0)
+      // This will use cache if valid (< 30 seconds old), otherwise fetch fresh
+      await fetchFromCache()
     } catch (err) {
       setError(err.message || 'Failed to load analysis history')
     } finally {
@@ -378,9 +408,13 @@ export default function AnalysisHistory() {
         item.status === 'partial_success' ||
         item.status === 'partial'
       )
-    } else {
+    } else if (tabValue === 2) {
       return history.filter(item => 
         item.status === 'failed' || item.status === 'error'
+      )
+    } else {
+      return history.filter(item => 
+        item.status === 'pending' || item.status === 'processing'
       )
     }
   }, [history, tabValue])
@@ -414,6 +448,7 @@ export default function AnalysisHistory() {
             <Tab label={`All (${history.length})`} />
             <Tab label={`Success (${successCount})`} />
             <Tab label={`Errors (${errorCount})`} />
+            <Tab label={`Pending (${pendingCount})`} />
           </Tabs>
         </Box>
 
