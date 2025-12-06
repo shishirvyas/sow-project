@@ -102,7 +102,7 @@ export default function MainLayout({ children }) {
       return false
     }
   })
-  const { user } = useAuth()
+  const { user, roles } = useAuth()
   const { fetchHistory, getTodaysAnalyses, loading: historyLoading } = useAnalysisHistory()
   const [profileCardOpen, setProfileCardOpen] = useState(true)
   const [todaysAnalyses, setTodaysAnalyses] = useState([])
@@ -218,6 +218,24 @@ export default function MainLayout({ children }) {
                   secondary={user?.job_title || ''}
                 />
               </ListItem>
+              {roles && roles.length > 0 && (
+                <Box sx={{ mt: 2, mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                    Roles
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {roles.map((role) => (
+                      <Chip 
+                        key={role.id} 
+                        label={role.name} 
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              )}
               <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                 <Button size="small" variant="contained" onClick={() => navigate('/profile')} fullWidth>
                   View Profile

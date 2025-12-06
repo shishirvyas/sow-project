@@ -20,6 +20,7 @@ const Roles = lazy(() => import('src/pages/admin/Roles'))
 const AuditLogs = lazy(() => import('src/pages/admin/AuditLogs'))
 const PermissionsGraph = lazy(() => import('src/pages/admin/PermissionsGraph'))
 const Permissions = lazy(() => import('src/pages/admin/Permissions'))
+const PromptSelector = lazy(() => import('src/pages/PromptSelector'))
 const Prompts = lazy(() => import('src/pages/Prompts'))
 const PromptsDebug = lazy(() => import('src/pages/PromptsDebug'))
 const Countries = lazy(() => import('src/pages/Countries'))
@@ -153,6 +154,14 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="role.view">
               <PermissionsGraph />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/prompt-selector" 
+          element={
+            <ProtectedRoute requiredPermission="prompt.view">
+              <PromptSelector />
             </ProtectedRoute>
           } 
         />

@@ -1049,12 +1049,16 @@ class PromptCreateRequest(BaseModel):
     name: str
     prompt_text: str
     is_active: bool = True
+    country_id: Optional[int] = None
+    sub_category_id: Optional[int] = None
 
 class PromptUpdateRequest(BaseModel):
     clause_id: str
     name: str
     prompt_text: str
     is_active: bool
+    country_id: Optional[int] = None
+    sub_category_id: Optional[int] = None
 
 class VariableRequest(BaseModel):
     variable_name: str
@@ -1064,9 +1068,10 @@ class VariableRequest(BaseModel):
 @router.get("/prompts")
 async def get_prompts(
     request: Request,
+    clause_id: str = None,
     current_user: int = Depends(get_current_user)
 ):
-    """Get all prompts (requires prompt.view permission)"""
+    """Get all prompts with optional clause_id search filter (requires prompt.view permission)"""
     try:
         # Check permission
         user_permissions = get_user_permissions(current_user)
@@ -1074,14 +1079,9 @@ async def get_prompts(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
         from src.app.services.prompt_service import get_all_prompts
-        prompts = get_all_prompts()
+        prompts = get_all_prompts(clause_id_filter=clause_id)
         
-        logging.info(f"📋 User {current_user} fetched {len(prompts)} prompts")
-        logging.info(f"🔍 Prompts data type: {type(prompts)}")
-        if prompts:
-            logging.info(f"🔍 First prompt type: {type(prompts[0])}")
-            logging.info(f"🔍 First prompt: {prompts[0]}")
-            logging.info(f"🔍 First prompt keys: {list(prompts[0].keys()) if hasattr(prompts[0], 'keys') else 'No keys method'}")
+        logging.info(f"📋 User {current_user} fetched {len(prompts)} prompts{f' (filtered by clause_id: {clause_id})' if clause_id else ''}")
         
         # Ensure proper JSON serialization - convert RealDictRow to plain dict
         prompts_list = []
@@ -1096,10 +1096,13 @@ async def get_prompts(
                 "is_active": p_dict['is_active'],
                 "created_at": str(p_dict['created_at']) if p_dict.get('created_at') else None,
                 "updated_at": str(p_dict['updated_at']) if p_dict.get('updated_at') else None,
-                "variable_count": int(p_dict.get('variable_count', 0))
+                "variable_count": int(p_dict.get('variable_count', 0)),
+                "country_id": p_dict.get('country_id'),
+                "country_name": p_dict.get('country_name'),
+                "category_name": p_dict.get('category_name'),
+                "sub_category_id": p_dict.get('sub_category_id'),
+                "sub_category_name": p_dict.get('sub_category_name')
             })
-        
-        logging.info(f"🔍 Serialized first prompt: {prompts_list[0] if prompts_list else 'None'}")
         
         return JSONResponse(content={"prompts": prompts_list, "count": len(prompts_list)})
         
@@ -1154,7 +1157,9 @@ async def create_prompt(
             clause_id=prompt_data.clause_id,
             name=prompt_data.name,
             prompt_text=prompt_data.prompt_text,
-            is_active=prompt_data.is_active
+            is_active=prompt_data.is_active,
+            country_id=prompt_data.country_id,
+            sub_category_id=prompt_data.sub_category_id
         )
         
         logging.info(f"✅ User {current_user} created prompt '{prompt_data.clause_id}'")
@@ -1190,7 +1195,9 @@ async def update_prompt(
             clause_id=prompt_data.clause_id,
             name=prompt_data.name,
             prompt_text=prompt_data.prompt_text,
-            is_active=prompt_data.is_active
+            is_active=prompt_data.is_active,
+            country_id=prompt_data.country_id,
+            sub_category_id=prompt_data.sub_category_id
         )
         
         if not prompt:

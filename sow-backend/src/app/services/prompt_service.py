@@ -8,8 +8,12 @@ from src.app.db.client import execute_query
 
 logger = logging.getLogger(__name__)
 
-def get_all_prompts() -> List[Dict]:
-    """Get all prompts with variable count"""
+def get_all_prompts(clause_id_filter: str = None) -> List[Dict]:
+    """Get all prompts with variable count and related country/category/subcategory names
+    
+    Args:
+        clause_id_filter: Optional clause_id to filter results (case-insensitive partial match)
+    """
     query = """
         SELECT 
             pt.id,
@@ -19,13 +23,32 @@ def get_all_prompts() -> List[Dict]:
             pt.is_active,
             pt.created_at,
             pt.updated_at,
+            pt.country_id,
+            pt.sub_category_id,
+            c.country_name,
+            cat.category_name,
+            sc.sub_category_name,
             COUNT(pv.id) as variable_count
         FROM prompt_templates pt
         LEFT JOIN prompt_variables pv ON pt.id = pv.prompt_id
-        GROUP BY pt.id, pt.clause_id, pt.name, pt.prompt_text, pt.is_active, pt.created_at, pt.updated_at
+        LEFT JOIN countries c ON pt.country_id = c.id
+        LEFT JOIN sub_categories sc ON pt.sub_category_id = sc.id
+        LEFT JOIN categories cat ON sc.category_id = cat.id
+        {where_clause}
+        GROUP BY pt.id, pt.clause_id, pt.name, pt.prompt_text, pt.is_active, 
+                 pt.created_at, pt.updated_at, pt.country_id, pt.sub_category_id,
+                 c.country_name, cat.category_name, sc.sub_category_name
         ORDER BY pt.clause_id
     """
-    result = execute_query(query)
+    
+    params = []
+    where_clause = ""
+    if clause_id_filter:
+        where_clause = "WHERE LOWER(pt.clause_id) LIKE LOWER(%s)"
+        params.append(f"%{clause_id_filter}%")
+    
+    query = query.format(where_clause=where_clause)
+    result = execute_query(query, tuple(params) if params else None)
     logger.info(f"🔥 SERVICE: Raw result type: {type(result)}")
     logger.info(f"🔥 SERVICE: Result length: {len(result) if result else 0}")
     if result:
@@ -70,17 +93,19 @@ def create_prompt(
     clause_id: str,
     name: str,
     prompt_text: str,
-    is_active: bool
+    is_active: bool,
+    country_id: Optional[int] = None,
+    sub_category_id: Optional[int] = None
 ) -> Dict:
     """Create a new prompt"""
     query = """
-        INSERT INTO prompt_templates (clause_id, name, prompt_text, is_active)
-        VALUES (%s, %s, %s, %s)
-        RETURNING id, clause_id, name, prompt_text, is_active, created_at
+        INSERT INTO prompt_templates (clause_id, name, prompt_text, is_active, country_id, sub_category_id)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, clause_id, name, prompt_text, is_active, country_id, sub_category_id, created_at
     """
     return execute_query(
         query,
-        (clause_id, name, prompt_text, is_active),
+        (clause_id, name, prompt_text, is_active, country_id, sub_category_id),
         fetch_one=True
     )
 
@@ -89,7 +114,9 @@ def update_prompt(
     clause_id: str,
     name: str,
     prompt_text: str,
-    is_active: bool
+    is_active: bool,
+    country_id: Optional[int] = None,
+    sub_category_id: Optional[int] = None
 ) -> Optional[Dict]:
     """Update an existing prompt"""
     try:
@@ -103,14 +130,16 @@ def update_prompt(
                 name = %s,
                 prompt_text = %s,
                 is_active = %s,
+                country_id = %s,
+                sub_category_id = %s,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, clause_id, name, prompt_text, is_active, updated_at
+            RETURNING id, clause_id, name, prompt_text, is_active, country_id, sub_category_id, updated_at
         """
         
         result = execute_query(
             query,
-            (clause_id, name, prompt_text, is_active, prompt_id),
+            (clause_id, name, prompt_text, is_active, country_id, sub_category_id, prompt_id),
             fetch_one=True
         )
         
