@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -33,14 +34,28 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Visibility as ViewIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  ArrowBack as ArrowBackIcon,
+  Warning as AlertIcon
 } from '@mui/icons-material';
 import { apiFetch } from '../config/api';
 import MainLayout from '../layouts/MainLayout';
 
-// Removed categories - using clause_id instead
-
 export default function Prompts() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Get context from navigation state
+  const promptContext = location.state || {};
+  const {
+    countryId,
+    countryName,
+    categoryId,
+    categoryName,
+    subCategoryId,
+    subCategoryName
+  } = promptContext;
+
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -49,7 +64,9 @@ export default function Prompts() {
   const [selectedPrompt, setSelectedPrompt] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [showContextRequired, setShowContextRequired] = useState(!countryName && !categoryName && !subCategoryName);
   
+  const [searchClauseId, setSearchClauseId] = useState('');
   const [formData, setFormData] = useState({
     clause_id: '',
     name: '',
@@ -61,11 +78,21 @@ export default function Prompts() {
     fetchPrompts();
   }, []);
 
+  // Debounce search to avoid too many API calls
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchPrompts();
+    }, 500); // Wait 500ms after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [searchClauseId]);
+
   const fetchPrompts = async () => {
     try {
       console.log('🔄 Fetching prompts...');
       setLoading(true);
-      const response = await apiFetch('prompts');
+      const url = searchClauseId ? `prompts?clause_id=${encodeURIComponent(searchClauseId)}` : 'prompts';
+      const response = await apiFetch(url);
       console.log('📡 Response status:', response.status, response.ok);
       
       if (response.ok) {
@@ -105,7 +132,9 @@ export default function Prompts() {
         clause_id: prompt.clause_id,
         name: prompt.name,
         prompt_text: prompt.prompt_text,
-        is_active: prompt.is_active
+        is_active: prompt.is_active,
+        country_id: prompt.country_id,
+        sub_category_id: prompt.sub_category_id
       });
     } else {
       setEditMode(false);
@@ -160,10 +189,18 @@ export default function Prompts() {
       const url = editMode ? `prompts/${selectedPrompt.id}` : 'prompts';
       const method = editMode ? 'PUT' : 'POST';
       
+      // For edit mode: use existing prompt context or navigation context
+      // For create mode: use navigation context
+      const payload = {
+        ...formData,
+        country_id: editMode ? (formData.country_id || countryId) : countryId,
+        sub_category_id: editMode ? (formData.sub_category_id || subCategoryId) : subCategoryId
+      };
+      
       const response = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
@@ -219,6 +256,58 @@ export default function Prompts() {
 
   return (
     <MainLayout>
+      {/* Mandatory Context Selection Modal */}
+      <Dialog 
+        open={showContextRequired} 
+        maxWidth="sm" 
+        fullWidth
+        disableEscapeKeyDown
+      >
+        <DialogTitle sx={{ bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <AlertIcon />
+            Context Selection Required
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            You must select a Country, Category, and Sub-Category context before managing AI Prompt Templates.
+          </Alert>
+          <Typography variant="body1" paragraph>
+            Prompts are organized by:
+          </Typography>
+          <Box component="ul" sx={{ pl: 2 }}>
+            <Typography component="li" variant="body2" gutterBottom>
+              <strong>Country:</strong> Geographic region or market
+            </Typography>
+            <Typography component="li" variant="body2" gutterBottom>
+              <strong>Category:</strong> Main classification group
+            </Typography>
+            <Typography component="li" variant="body2" gutterBottom>
+              <strong>Sub-Category:</strong> Specific area within the category
+            </Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            This ensures prompts are properly categorized and can be managed effectively across different contexts.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: 'grey.50' }}>
+          <Button
+            onClick={() => navigate(-1)}
+            color="inherit"
+          >
+            Go Back
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => navigate('/prompt-selector')}
+            autoFocus
+          >
+            Select Context
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
           AI Prompt Templates
@@ -232,17 +321,91 @@ export default function Prompts() {
         </Button>
       </Box>
 
+      {/* Context Banner */}
+      {(countryName || categoryName || subCategoryName) && (
+        <Card sx={{ mb: 3, bgcolor: 'info.light', borderLeft: 4, borderColor: 'info.main' }}>
+          <CardContent>
+            <Box display="flex" alignItems="center" justifyContent="space-between">
+              <Box>
+                <Typography variant="h6" gutterBottom sx={{ color: 'info.contrastText' }}>
+                  Prompt Context
+                </Typography>
+                <Box display="flex" gap={1} flexWrap="wrap">
+                  {countryName && (
+                    <Chip
+                      label={`Country: ${countryName}`}
+                      color="primary"
+                      size="medium"
+                    />
+                  )}
+                  {categoryName && (
+                    <Chip
+                      label={`Category: ${categoryName}`}
+                      color="primary"
+                      size="medium"
+                    />
+                  )}
+                  {subCategoryName && (
+                    <Chip
+                      label={`Sub-Category: ${subCategoryName}`}
+                      color="success"
+                      size="medium"
+                    />
+                  )}
+                </Box>
+              </Box>
+              <IconButton
+                onClick={() => navigate('/prompt-selector')}
+                color="primary"
+                title="Change Context"
+              >
+                <ArrowBackIcon />
+              </IconButton>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent>
+          {/* Search Field */}
+          <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
+            <TextField
+              label="Search by Clause ID"
+              placeholder="Enter Clause ID to search..."
+              value={searchClauseId}
+              onChange={(e) => setSearchClauseId(e.target.value)}
+              variant="outlined"
+              size="medium"
+              sx={{ flexGrow: 1, maxWidth: 400 }}
+              InputProps={{
+                endAdornment: searchClauseId && (
+                  <IconButton
+                    size="small"
+                    onClick={() => setSearchClauseId('')}
+                    edge="end"
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                )
+              }}
+            />
+            {searchClauseId && (
+              <Typography variant="body2" color="text.secondary">
+                {prompts.length} result{prompts.length !== 1 ? 's' : ''} found
+              </Typography>
+            )}
+          </Box>
+
           <TableContainer component={Paper} elevation={0}>
             <Table>
               <TableHead>
                 <TableRow>
                   <TableCell>Clause ID</TableCell>
                   <TableCell>Name</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Variables</TableCell>
-                  <TableCell>Last Updated</TableCell>
+                  <TableCell>Country</TableCell>
+                  <TableCell>Category</TableCell>
+                  <TableCell>SubCategory</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -254,7 +417,7 @@ export default function Prompts() {
                 ) : prompts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} align="center">
-                      No prompts found. Create your first prompt template!
+                      {searchClauseId ? `No prompts found matching "${searchClauseId}"` : 'No prompts found. Create your first prompt template!'}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -274,23 +437,18 @@ export default function Prompts() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={prompt.is_active ? 'Active' : 'Inactive'}
-                          size="small"
-                          color={prompt.is_active ? 'success' : 'default'}
-                        />
+                        <Typography variant="body2">
+                          {prompt.country_name || <span style={{color: '#999', fontStyle: 'italic'}}>Not Set</span>}
+                        </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          label={`${prompt.variable_count || 0} variables`} 
-                          size="small" 
-                          variant="outlined"
-                        />
+                        <Typography variant="body2">
+                          {prompt.category_name || <span style={{color: '#999', fontStyle: 'italic'}}>Not Set</span>}
+                        </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {prompt.updated_at ? new Date(prompt.updated_at).toLocaleDateString() : 
-                           new Date(prompt.created_at).toLocaleDateString()}
+                        <Typography variant="body2">
+                          {prompt.sub_category_name || <span style={{color: '#999', fontStyle: 'italic'}}>Not Set</span>}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">

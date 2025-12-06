@@ -23,6 +23,9 @@ import {
   Article as AuditIcon,
   BarChart as ChartIcon,
   EditNote as EditNoteIcon,
+  Public as CountryIcon,
+  Category as CategoryIcon,
+  AccountTree as SubCategoryIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -39,11 +42,17 @@ const iconMap = {
   RolesIcon,
   AuditIcon,
   ChartIcon,
+  CountryIcon,
+  CategoryIcon,
+  SubCategoryIcon,
   // Legacy mappings for backward compatibility
   dashboard: DashboardIcon,
   'analyze-doc': DescriptionIcon,
   'analysis-history': HistoryIcon,
   prompts: EditNoteIcon,
+  countries: CountryIcon,
+  categories: CategoryIcon,
+  'sub-categories': SubCategoryIcon,
   users: PeopleIcon,
   'user-management': PeopleIcon,
   roles: RolesIcon,

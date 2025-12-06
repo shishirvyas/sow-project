@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from src.app.core.config import settings
 from src.app.api.v1.auth import get_current_user
 from src.app.services.auth_service import get_user_permissions
+from src.app.db.client import execute_query
 import subprocess
 import sys
 from pathlib import Path
@@ -1048,12 +1049,16 @@ class PromptCreateRequest(BaseModel):
     name: str
     prompt_text: str
     is_active: bool = True
+    country_id: Optional[int] = None
+    sub_category_id: Optional[int] = None
 
 class PromptUpdateRequest(BaseModel):
     clause_id: str
     name: str
     prompt_text: str
     is_active: bool
+    country_id: Optional[int] = None
+    sub_category_id: Optional[int] = None
 
 class VariableRequest(BaseModel):
     variable_name: str
@@ -1063,9 +1068,10 @@ class VariableRequest(BaseModel):
 @router.get("/prompts")
 async def get_prompts(
     request: Request,
+    clause_id: str = None,
     current_user: int = Depends(get_current_user)
 ):
-    """Get all prompts (requires prompt.view permission)"""
+    """Get all prompts with optional clause_id search filter (requires prompt.view permission)"""
     try:
         # Check permission
         user_permissions = get_user_permissions(current_user)
@@ -1073,14 +1079,9 @@ async def get_prompts(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
         from src.app.services.prompt_service import get_all_prompts
-        prompts = get_all_prompts()
+        prompts = get_all_prompts(clause_id_filter=clause_id)
         
-        logging.info(f"📋 User {current_user} fetched {len(prompts)} prompts")
-        logging.info(f"🔍 Prompts data type: {type(prompts)}")
-        if prompts:
-            logging.info(f"🔍 First prompt type: {type(prompts[0])}")
-            logging.info(f"🔍 First prompt: {prompts[0]}")
-            logging.info(f"🔍 First prompt keys: {list(prompts[0].keys()) if hasattr(prompts[0], 'keys') else 'No keys method'}")
+        logging.info(f"📋 User {current_user} fetched {len(prompts)} prompts{f' (filtered by clause_id: {clause_id})' if clause_id else ''}")
         
         # Ensure proper JSON serialization - convert RealDictRow to plain dict
         prompts_list = []
@@ -1095,10 +1096,13 @@ async def get_prompts(
                 "is_active": p_dict['is_active'],
                 "created_at": str(p_dict['created_at']) if p_dict.get('created_at') else None,
                 "updated_at": str(p_dict['updated_at']) if p_dict.get('updated_at') else None,
-                "variable_count": int(p_dict.get('variable_count', 0))
+                "variable_count": int(p_dict.get('variable_count', 0)),
+                "country_id": p_dict.get('country_id'),
+                "country_name": p_dict.get('country_name'),
+                "category_name": p_dict.get('category_name'),
+                "sub_category_id": p_dict.get('sub_category_id'),
+                "sub_category_name": p_dict.get('sub_category_name')
             })
-        
-        logging.info(f"🔍 Serialized first prompt: {prompts_list[0] if prompts_list else 'None'}")
         
         return JSONResponse(content={"prompts": prompts_list, "count": len(prompts_list)})
         
@@ -1153,7 +1157,9 @@ async def create_prompt(
             clause_id=prompt_data.clause_id,
             name=prompt_data.name,
             prompt_text=prompt_data.prompt_text,
-            is_active=prompt_data.is_active
+            is_active=prompt_data.is_active,
+            country_id=prompt_data.country_id,
+            sub_category_id=prompt_data.sub_category_id
         )
         
         logging.info(f"✅ User {current_user} created prompt '{prompt_data.clause_id}'")
@@ -1179,26 +1185,35 @@ async def update_prompt(
         if 'prompt.edit' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🔄 User {current_user} attempting to update prompt ID {prompt_id}")
+        logging.info(f"📝 Update data: clause_id={prompt_data.clause_id}, name={prompt_data.name}, is_active={prompt_data.is_active}")
+        logging.info(f"📝 Prompt text length: {len(prompt_data.prompt_text)} characters")
+        
         from src.app.services.prompt_service import update_prompt
         prompt = update_prompt(
             prompt_id=prompt_id,
             clause_id=prompt_data.clause_id,
             name=prompt_data.name,
             prompt_text=prompt_data.prompt_text,
-            is_active=prompt_data.is_active
+            is_active=prompt_data.is_active,
+            country_id=prompt_data.country_id,
+            sub_category_id=prompt_data.sub_category_id
         )
         
         if not prompt:
-            raise HTTPException(status_code=404, detail="Prompt not found")
+            logging.warning(f"⚠️ Prompt {prompt_id} not found or update returned None")
+            raise HTTPException(status_code=404, detail="Prompt not found or update failed")
         
-        logging.info(f"✏️ User {current_user} updated prompt ID {prompt_id}")
+        logging.info(f"✅ User {current_user} successfully updated prompt ID {prompt_id}")
+        logging.info(f"✅ Updated prompt: {prompt}")
         return {"message": "Prompt updated successfully", "prompt": prompt}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error updating prompt {prompt_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"❌ Error updating prompt {prompt_id}: {e}", exc_info=True)
+        logging.error(f"❌ Error type: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail=f"Failed to update prompt: {str(e)}")
 
 @router.delete("/prompts/{prompt_id}")
 async def delete_prompt(
@@ -1213,19 +1228,23 @@ async def delete_prompt(
         if 'prompt.delete' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🗑️ User {current_user} attempting to delete prompt ID {prompt_id}")
+        
         from src.app.services.prompt_service import delete_prompt
         success = delete_prompt(prompt_id)
         
         if not success:
+            logging.warning(f"⚠️ Prompt {prompt_id} not found for deletion")
             raise HTTPException(status_code=404, detail="Prompt not found")
         
-        logging.info(f"🗑️ User {current_user} deleted prompt ID {prompt_id}")
+        logging.info(f"✅ User {current_user} successfully deleted prompt ID {prompt_id}")
         return {"message": "Prompt deleted successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error deleting prompt {prompt_id}: {e}", exc_info=True)
+        logging.error(f"❌ Error deleting prompt {prompt_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete prompt: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/prompts/{prompt_id}/variables")
@@ -1294,17 +1313,26 @@ async def delete_prompt_variable(
         if 'prompt.edit' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🗑️ User {current_user} attempting to delete variable {variable_id} from prompt {prompt_id}")
+        
         from src.app.services.prompt_service import delete_variable
         success = delete_variable(variable_id)
         
-        logging.info(f"🗑️ User {current_user} deleted variable {variable_id}")
+        if not success:
+            logging.warning(f"⚠️ Variable {variable_id} not found for deletion")
+            raise HTTPException(status_code=404, detail="Variable not found")
+        
+        logging.info(f"✅ User {current_user} successfully deleted variable {variable_id}")
         return {"message": "Variable deleted successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error deleting variable: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"❌ Error deleting variable {variable_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete variable: {str(e)}")
+
+
+
 
 
 # ============================================================================
