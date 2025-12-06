@@ -66,11 +66,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             except Exception as e:
                 logger.warning(f"Could not read request body: {e}")
         
-        # Log incoming request
-        log_parts = [f"🔵 REQUEST [{request_id}]", f"{method} {path}"]
+        # Store request details for error logging
+        request_log_parts = [f"🔵 REQUEST [{request_id}]", f"{method} {path}"]
         
         if config.get("log_query_params", True) and query_params:
-            log_parts.append(f"Query={query_params}")
+            request_log_parts.append(f"Query={query_params}")
         
         if request_body:
             # Mask sensitive fields if enabled
@@ -79,12 +79,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             else:
                 masked_body = request_body
             body_str = json.dumps(masked_body) if isinstance(masked_body, dict) else str(masked_body)
-            log_parts.append(f"Body={body_str}")
-        
-        # Log at configured level
-        log_level_str = config.get("log_level", "INFO")
-        log_method = getattr(logger, log_level_str.lower(), logger.info)
-        log_method(" | ".join(log_parts))
+            request_log_parts.append(f"Body={body_str}")
         
         # Process request
         response = await call_next(request)
@@ -149,10 +144,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if config.get("log_slow_requests", True) and process_time > slow_threshold:
             log_parts.append("⚠️ SLOW")
         
-        # Log at configured level
-        log_level_str = get_log_level(method, path, status_code)
-        log_method = getattr(logger, log_level_str.lower(), logger.info)
-        log_method(" | ".join(log_parts))
+        # Only log if there's an error (status >= 400) or slow request
+        if status_code >= 400 or process_time > slow_threshold:
+            # Log request details first for context
+            log_level_str = get_log_level(method, path, status_code)
+            log_method = getattr(logger, log_level_str.lower(), logger.error)
+            log_method(" | ".join(request_log_parts))
+            
+            # Then log response
+            log_method(" | ".join(log_parts))
         
         # Add timing header
         response.headers["X-Process-Time"] = f"{process_time:.2f}ms"

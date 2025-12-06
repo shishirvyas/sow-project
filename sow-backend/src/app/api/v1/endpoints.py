@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from src.app.core.config import settings
 from src.app.api.v1.auth import get_current_user
 from src.app.services.auth_service import get_user_permissions
+from src.app.db.client import execute_query
 import subprocess
 import sys
 from pathlib import Path
@@ -1179,6 +1180,10 @@ async def update_prompt(
         if 'prompt.edit' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🔄 User {current_user} attempting to update prompt ID {prompt_id}")
+        logging.info(f"📝 Update data: clause_id={prompt_data.clause_id}, name={prompt_data.name}, is_active={prompt_data.is_active}")
+        logging.info(f"📝 Prompt text length: {len(prompt_data.prompt_text)} characters")
+        
         from src.app.services.prompt_service import update_prompt
         prompt = update_prompt(
             prompt_id=prompt_id,
@@ -1189,16 +1194,19 @@ async def update_prompt(
         )
         
         if not prompt:
-            raise HTTPException(status_code=404, detail="Prompt not found")
+            logging.warning(f"⚠️ Prompt {prompt_id} not found or update returned None")
+            raise HTTPException(status_code=404, detail="Prompt not found or update failed")
         
-        logging.info(f"✏️ User {current_user} updated prompt ID {prompt_id}")
+        logging.info(f"✅ User {current_user} successfully updated prompt ID {prompt_id}")
+        logging.info(f"✅ Updated prompt: {prompt}")
         return {"message": "Prompt updated successfully", "prompt": prompt}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error updating prompt {prompt_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"❌ Error updating prompt {prompt_id}: {e}", exc_info=True)
+        logging.error(f"❌ Error type: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail=f"Failed to update prompt: {str(e)}")
 
 @router.delete("/prompts/{prompt_id}")
 async def delete_prompt(
@@ -1213,19 +1221,23 @@ async def delete_prompt(
         if 'prompt.delete' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🗑️ User {current_user} attempting to delete prompt ID {prompt_id}")
+        
         from src.app.services.prompt_service import delete_prompt
         success = delete_prompt(prompt_id)
         
         if not success:
+            logging.warning(f"⚠️ Prompt {prompt_id} not found for deletion")
             raise HTTPException(status_code=404, detail="Prompt not found")
         
-        logging.info(f"🗑️ User {current_user} deleted prompt ID {prompt_id}")
+        logging.info(f"✅ User {current_user} successfully deleted prompt ID {prompt_id}")
         return {"message": "Prompt deleted successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error deleting prompt {prompt_id}: {e}", exc_info=True)
+        logging.error(f"❌ Error deleting prompt {prompt_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete prompt: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/prompts/{prompt_id}/variables")
@@ -1294,17 +1306,26 @@ async def delete_prompt_variable(
         if 'prompt.edit' not in user_permissions:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         
+        logging.info(f"🗑️ User {current_user} attempting to delete variable {variable_id} from prompt {prompt_id}")
+        
         from src.app.services.prompt_service import delete_variable
         success = delete_variable(variable_id)
         
-        logging.info(f"🗑️ User {current_user} deleted variable {variable_id}")
+        if not success:
+            logging.warning(f"⚠️ Variable {variable_id} not found for deletion")
+            raise HTTPException(status_code=404, detail="Variable not found")
+        
+        logging.info(f"✅ User {current_user} successfully deleted variable {variable_id}")
         return {"message": "Variable deleted successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error deleting variable: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"❌ Error deleting variable {variable_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete variable: {str(e)}")
+
+
+
 
 
 # ============================================================================

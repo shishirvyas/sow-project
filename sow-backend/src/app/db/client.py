@@ -84,7 +84,8 @@ def get_db_connection_dict():
 
 def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fetch_all: bool = True):
     """
-    Execute a SELECT query and return results
+    Execute a database query (SELECT, INSERT, UPDATE, DELETE)
+    Automatically commits for INSERT/UPDATE/DELETE with RETURNING clause
     
     Args:
         query: SQL query string
@@ -98,11 +99,20 @@ def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fet
     conn = None
     cursor = None
     
+    # Check if this is a mutation query (INSERT, UPDATE, DELETE)
+    query_upper = query.strip().upper()
+    is_mutation = any(query_upper.startswith(cmd) for cmd in ['INSERT', 'UPDATE', 'DELETE'])
+    
     try:
         conn = get_db_connection_dict()
         cursor = conn.cursor()
         
         cursor.execute(query, params)
+        
+        # Commit if it's a mutation query
+        if is_mutation:
+            conn.commit()
+            logger.debug(f"Committed transaction for mutation query")
         
         if fetch_one:
             result = cursor.fetchone()
@@ -115,6 +125,9 @@ def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fet
         return None
         
     except Exception as e:
+        if conn and is_mutation:
+            conn.rollback()
+            logger.error(f"Rolled back transaction due to error")
         logger.error(f"Query execution error: {e}")
         raise
     finally:

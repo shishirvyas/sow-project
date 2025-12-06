@@ -723,3 +723,43 @@ def get_audit_logs(
         "offset": offset,
         "count": len(logs)
     }
+
+
+# ==================== CACHE MANAGEMENT ====================
+
+@router.post("/cache/clear")
+def clear_cache(
+    category: Optional[str] = None,
+    user_id: int = Depends(get_current_user)
+):
+    """
+    Clear application cache.
+    
+    Requires: role.view permission (admin only)
+    
+    Args:
+        category: Optional category to clear (e.g., 'permissions', 'roles', 'menu')
+                 If not provided, clears all caches
+    """
+    # Check permission
+    permissions = get_user_permissions(user_id)
+    if 'role.view' not in permissions:
+        error = get_error_response("USR-112")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error
+        )
+    
+    from src.app.core.hybrid_cache import InProcessCache
+    
+    if category:
+        InProcessCache.clear(category=category)
+        return {
+            "message": f"Cache cleared for category: {category}",
+            "category": category
+        }
+    else:
+        InProcessCache.clear()
+        return {
+            "message": "All caches cleared"
+        }

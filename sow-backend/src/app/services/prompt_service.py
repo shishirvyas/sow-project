@@ -92,28 +92,59 @@ def update_prompt(
     is_active: bool
 ) -> Optional[Dict]:
     """Update an existing prompt"""
-    query = """
-        UPDATE prompt_templates
-        SET 
-            clause_id = %s,
-            name = %s,
-            prompt_text = %s,
-            is_active = %s,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = %s
-        RETURNING id, clause_id, name, prompt_text, is_active, updated_at
-    """
-    return execute_query(
-        query,
-        (clause_id, name, prompt_text, is_active, prompt_id),
-        fetch_one=True
-    )
+    try:
+        logger.info(f"🔄 Updating prompt {prompt_id}")
+        logger.info(f"📝 New values: clause_id={clause_id}, name={name}, is_active={is_active}, prompt_text_length={len(prompt_text)}")
+        
+        query = """
+            UPDATE prompt_templates
+            SET 
+                clause_id = %s,
+                name = %s,
+                prompt_text = %s,
+                is_active = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, clause_id, name, prompt_text, is_active, updated_at
+        """
+        
+        result = execute_query(
+            query,
+            (clause_id, name, prompt_text, is_active, prompt_id),
+            fetch_one=True
+        )
+        
+        if result:
+            logger.info(f"✅ Successfully updated prompt {prompt_id}")
+            logger.info(f"✅ Result: {result}")
+        else:
+            logger.warning(f"⚠️ Update returned None for prompt {prompt_id} - prompt may not exist")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error in update_prompt service: {e}", exc_info=True)
+        raise
 
 def delete_prompt(prompt_id: int) -> bool:
     """Delete a prompt (will cascade delete variables)"""
-    query = "DELETE FROM prompt_templates WHERE id = %s"
-    execute_query(query, (prompt_id,))
-    return True
+    try:
+        logger.info(f"🗑️ Attempting to delete prompt {prompt_id}")
+        
+        # Use RETURNING to verify deletion happened
+        query = "DELETE FROM prompt_templates WHERE id = %s RETURNING id"
+        result = execute_query(query, (prompt_id,), fetch_one=True)
+        
+        if result:
+            logger.info(f"✅ Successfully deleted prompt {prompt_id}")
+            return True
+        else:
+            logger.warning(f"⚠️ Prompt {prompt_id} not found - nothing deleted")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Error in delete_prompt service: {e}", exc_info=True)
+        raise
 
 def get_active_prompts() -> List[Dict]:
     """Get all active prompts"""
@@ -183,6 +214,20 @@ def update_variable(
 
 def delete_variable(variable_id: int) -> bool:
     """Delete a variable"""
-    query = "DELETE FROM prompt_variables WHERE id = %s"
-    execute_query(query, (variable_id,))
-    return True
+    try:
+        logger.info(f"🗑️ Attempting to delete variable {variable_id}")
+        
+        # Use RETURNING to verify deletion happened
+        query = "DELETE FROM prompt_variables WHERE id = %s RETURNING id"
+        result = execute_query(query, (variable_id,), fetch_one=True)
+        
+        if result:
+            logger.info(f"✅ Successfully deleted variable {variable_id}")
+            return True
+        else:
+            logger.warning(f"⚠️ Variable {variable_id} not found - nothing deleted")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Error in delete_variable service: {e}", exc_info=True)
+        raise

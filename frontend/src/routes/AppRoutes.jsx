@@ -22,6 +22,9 @@ const PermissionsGraph = lazy(() => import('src/pages/admin/PermissionsGraph'))
 const Permissions = lazy(() => import('src/pages/admin/Permissions'))
 const Prompts = lazy(() => import('src/pages/Prompts'))
 const PromptsDebug = lazy(() => import('src/pages/PromptsDebug'))
+const Countries = lazy(() => import('src/pages/Countries'))
+const Categories = lazy(() => import('src/pages/Categories'))
+const SubCategories = lazy(() => import('src/pages/SubCategories'))
 
 const Loading = () => (
   <Box sx={{ width: '100%', mt: 6 }}>
@@ -166,6 +169,30 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="prompt.view">
               <PromptsDebug />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/countries" 
+          element={
+            <ProtectedRoute requiredPermission="prompt.view">
+              <Countries />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/categories" 
+          element={
+            <ProtectedRoute requiredPermission="prompt.view">
+              <Categories />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/sub-categories" 
+          element={
+            <ProtectedRoute requiredPermission="prompt.view">
+              <SubCategories />
             </ProtectedRoute>
           } 
         />
