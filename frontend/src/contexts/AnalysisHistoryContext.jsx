@@ -18,6 +18,7 @@ export const AnalysisHistoryProvider = ({ children }) => {
   const [loading, setLoading] = useState(false)
   const [lastFetch, setLastFetch] = useState(null)
   const fetchingRef = useRef(false)
+  const fetchPromiseRef = useRef(null)
 
   // Cache duration: 30 seconds
   const CACHE_DURATION = 30000
@@ -30,52 +31,59 @@ export const AnalysisHistoryProvider = ({ children }) => {
   const fetchHistory = useCallback(async (forceRefresh = false) => {
     // Return cached data if valid and not forcing refresh
     if (!forceRefresh && isCacheValid()) {
-      console.log('📦 Using cached analysis history')
+      console.log('📦 Using cached analysis history (age:', Math.round((Date.now() - lastFetch) / 1000), 'seconds)')
       return { history, successCount, errorCount }
     }
 
-    // Prevent multiple simultaneous fetches
-    if (fetchingRef.current) {
-      console.log('⏳ Fetch already in progress, waiting...')
-      return { history, successCount, errorCount }
+    // If a fetch is already in progress, wait for it to complete
+    if (fetchingRef.current && fetchPromiseRef.current) {
+      console.log('⏳ Fetch already in progress, waiting for it to complete...')
+      return fetchPromiseRef.current
     }
 
     fetchingRef.current = true
     setLoading(true)
 
-    try {
-      console.log('🔄 Fetching fresh analysis history from API')
-      const response = await apiFetch('analysis-history')
+    // Create a promise that will be shared across simultaneous calls
+    fetchPromiseRef.current = (async () => {
+      try {
+        console.log('🔄 Fetching fresh analysis history from API')
+        const response = await apiFetch('analysis-history')
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch history: ${response.statusText}`)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch history: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+        setHistory(data.history || [])
+        setSuccessCount(data.success_count || 0)
+        setErrorCount(data.error_count || 0)
+        setLastFetch(Date.now())
+
+        console.log('✅ Analysis history cached:', {
+          items: data.history?.length || 0,
+          success: data.success_count,
+          errors: data.error_count,
+          timestamp: new Date().toISOString()
+        })
+
+        return {
+          history: data.history || [],
+          successCount: data.success_count || 0,
+          errorCount: data.error_count || 0
+        }
+      } catch (error) {
+        console.error('❌ Error fetching analysis history:', error)
+        throw error
+      } finally {
+        setLoading(false)
+        fetchingRef.current = false
+        fetchPromiseRef.current = null
       }
+    })()
 
-      const data = await response.json()
-      setHistory(data.history || [])
-      setSuccessCount(data.success_count || 0)
-      setErrorCount(data.error_count || 0)
-      setLastFetch(Date.now())
-
-      console.log('✅ Analysis history cached:', {
-        items: data.history?.length || 0,
-        success: data.success_count,
-        errors: data.error_count
-      })
-
-      return {
-        history: data.history || [],
-        successCount: data.success_count || 0,
-        errorCount: data.error_count || 0
-      }
-    } catch (error) {
-      console.error('❌ Error fetching analysis history:', error)
-      throw error
-    } finally {
-      setLoading(false)
-      fetchingRef.current = false
-    }
-  }, [history, successCount, errorCount, isCacheValid])
+    return fetchPromiseRef.current
+  }, [history, successCount, errorCount, isCacheValid, lastFetch])
 
   // Get today's completed analyses (from cache)
   const getTodaysAnalyses = useCallback(() => {
